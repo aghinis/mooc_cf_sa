@@ -133,27 +133,6 @@ def load_dataset(name):
         data=pd.read_csv("canvas_preprocessed.csv",index_col=False,usecols=cols_to_use)[cols_to_use]
     return data
 
-def load_train_data(name):
-
-    if name == 'kdd':
-        df = pd.read_csv('../mooc_datasets/train_dfs/kdd_train_df.csv', low_memory=False)
-        df.loc[:, 'days_spent'] = pd.to_timedelta(df.loc[:, 'days_spent']).dt.days
-
-    elif name == 'xuen':
-        df = pd.read_csv('~/data/dropRS/dataset/xuentangx_v2_train_df.csv', low_memory=False)
-        df.loc[:, 'days_spent'] = pd.to_timedelta(df.loc[:, 'days_spent']).dt.seconds/3600
-
-    elif name == 'xuen1':
-        df = pd.read_csv('xuentangx_v1_train_df.csv', low_memory=False)
-        df.loc[:, 'days_spent'] = pd.to_timedelta(df.loc[:, 'days_spent']).dt.total_seconds()/86400
-
-    elif name == 'canvas':
-        df = pd.read_csv('canvas_train_df.csv', low_memory=False)
-        df.loc[:, 'days_spent'] = pd.to_timedelta(df.loc[:, 'days_spent']).dt.days
-        df = df.drop(columns='Unnamed: 0')
-
-    return df
-
 def df_to_matrix(df):
 
     bin_mtx  = pd.crosstab(df['username'],df['course_id'], df['completed'], aggfunc='mean', dropna=False).fillna(0)
@@ -434,9 +413,6 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True):
     else:
         data = threshold_interactions_df_mooc(data, "username","course_id", 5, 3)
 
-    if dataset == 'Canvas':
-        data = data[data['username']!=832988535]
-
     interactions,rid_to_idx, idx_to_rid, cid_to_idx, idx_to_cid = df_to_mat(data,"username","course_id","completed")
     train_set,test_set,users_set = train_test_sp(interactions,split_count=split_count,min_completed=min_completed)
 
@@ -626,9 +602,6 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True):
         print("unlabeled for 0 ",len(new_unl_df_names.loc[new_unl_df_names['username']==0]))
 
         scores = {
-                    # "BPR":{"ndcg":[],"MAP":[],"recall":[],"precision":[],"h_param":['epochs','no_components','learning_rate','item_alpha','user_alpha'],"h_param_range":[(50, 350),(10,300),(10**-5, 10**-1, 'log-uniform'),(10**-7, 10**-1, 'log-uniform'),(10**-6, 10**-1, 'log-uniform')],'best_param':[336, 207, 5.596974933016647e-05, 0.0005605913885321211, 0.07893887705085302]},
-                # "WARP":{"ndcg":[],"MAP":[],"recall":[],"precision":[],"h_param":['epochs','no_components','learning_rate','item_alpha','user_alpha'],"h_param_range":[(50, 350),(10,300),(10**-5, 10**-1, 'log-uniform'),(10**-7, 10**-1, 'log-uniform'),(10**-6, 10**-1, 'log-uniform')],'best_param':[268, 226, 7.01854105327644e-05, 0.006705265022562404, 0.01602820393938058]},
-                # "MVAE":{"ndcg":[],"h_param":['epochs','batch_size','total_anneal_steps'],"h_param_range":[(10,250),(25,500),(100000,300000)],'best_param':[99, 391, 127354]},
                 "EASE":{"ndcg":[],"h_param":['topK', 'l2_norm'],"h_param_range":[[None],(1e0, 1e7)],'best_param':{"X":[None, 95109.6942962282],"Canvas":[None, 9325573.660829231],"KDD":[None, 2540.6584595004156]}},
                 "UKNN":{"ndcg":[],"h_param":['topK', 'shrink'],"h_param_range":[(20, 800),(0,1000)],'best_param':{"X":[301, 178],"Canvas":[128, 8],"KDD":[488, 907]}},
                 "IKNN":{"ndcg":[],"h_param":['topK', 'shrink'],"h_param_range":[(20, 800),(0,1000)],'best_param':{"X":[70, 350],"Canvas":[789, 793],"KDD":[37, 194]}},
@@ -642,9 +615,6 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True):
         for baseline in ["EASE","UKNN","IKNN",'SVD','NMF','SLIM', 'IALS']: 
             print(baseline)
             train_rs = train_set.copy()
-            # for row, col in zip(*train_rs.nonzero()):
-            #     if train_rs[row, col] == 2:
-            #         train_rs[row, col] = 1baselines/
             best_CF_model = baseline
             if baseline == 'UKNN':
                 cf_model = UserKNNCFRecommender(train_rs)
@@ -688,9 +658,6 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True):
                     log_print(f"{baseline} ndcg-time of re-ranking (base = recom and {surv_model} on both): ",    ndcg_time(re_ranked_list3,test_set,test_time,k=k))
 
                     tmp_res =  [surv_model,baseline,k,i,ndcg(recom,test_set,k=k),ndcg(recomm_surv_1,test_set,k=k),ndcg(recomm_surv_2,test_set,k=k),ndcg(recomm_surv_3,test_set,k=k),ndcg(re_ranked_list1,test_set,k=k),ndcg(re_ranked_list2,test_set,k=k),ndcg(re_ranked_list3,test_set,k=k),ndcg_time(re_ranked_list1,test_set,test_time,k=k),ndcg_time(re_ranked_list2,test_set,test_time,k=k),ndcg_time(re_ranked_list3,test_set,test_time,k=k)]
-                    # if dataset != 'Canvas':
-                    #     re_ranked_list2 = re_ranker(recomm_surv_1,recom,i,k)
-                    #     log_print("ndcg of re-ranking (base = surv): ",    ndcg(re_ranked_list2,test_set,k=k))
                     ranking_results.append(tmp_res)
     run_results = pd.DataFrame(ranking_results)
     run_results.columns = ['surv_model', 'baseline_model', 'k','list length','ndcg uknn','ndcg coxnet dropout','ndcg coxnet complete','ndcg coxnet both','ndcg re-rank dropout','ndcg re-rank completion','ndcg re-rank both','ndcg-time re-rank dropout','ndcg-time re-rank completion','ndcg-time re-rank both']
@@ -712,7 +679,6 @@ for dataset in datasets:
                 run_results['dataset'] = dataset
                 full_results.append(run_results)
                 log_print(run_results)
-                #run_all_factors(split_count=split_count,min_completed=min_completed)
             else:
                 pass
 logging.basicConfig(filename=f'final_experiments_v{version}.txt', level=logging.INFO, format='%(message)s')
