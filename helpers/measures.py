@@ -29,27 +29,6 @@ def dcg_at_k(r, k, method=0):
             raise ValueError('method must be 0 or 1.')
     return 0.
 
-def precision(recoms, test_set,k=10):
-
-    num_users = len(recoms)
-    test = test_set.A
-    precision=[]
-    for user in range(num_users):
-        ranking = np.array(recoms[user])
-        r=[]
-        for item_id in ranking:
-            real_value = test[user,item_id]
-            if real_value==0:
-                r.append(real_value)
-            else:
-                r.append(1)
-        assert k >= 1
-        r = np.asarray(r)[:k] != 0
-        if r.size != k:
-            raise ValueError('Relevance score length < k')
-        precision.append(np.mean(r))
-    return np.mean(precision)
-
 def ndcg(recoms, test_set,k=10,method=0):
     num_users = len(recoms)
     test = test_set.A
@@ -106,78 +85,6 @@ def ndcg_time(recoms, test_set,test_time,k=10,method=0):
         else: ndcg.append(dcg_at_k(r, k, method) / dcg_max)
     return np.mean(ndcg)
     
-def precision(recoms, test_set,k=10):
 
-    num_users = len(recoms)
-    test = test_set.A
-    precision=[]
-    for user in range(num_users):
-        ranking = np.array(recoms[user])
-        r=[]
-        for item_id in ranking:
-            real_value = test[user,item_id]
-            if real_value==0:
-                r.append(real_value)
-            else:
-                r.append(1)
-        assert k >= 1
-        r = np.asarray(r)[:k] != 0
-        if r.size != k:
-            raise ValueError('Relevance score length < k')
-        precision.append(np.mean(r))
-    return np.mean(precision)
 
-def recall(recoms,test_set,k=10):
 
-    num_users = len(recoms)
-    recall=[]
-    test = test_set.A
-    for user in range(num_users):
-        ranking = np.array(recoms[user])
-        r=[]
-        relevant = test_set[user,:].count_nonzero()
-        if relevant == 0 or math.isnan(relevant):
-            continue
-        for item_id in ranking:
-            real_value = test[user,item_id]
-            if real_value==0:
-                r.append(real_value)
-            else:
-                r.append(1)
-        assert k >= 1
-        r = np.asarray(r)[:k] != 0
-        if r.size != k:
-            raise ValueError('Relevance score length < k')
-        recall.append(np.sum(r)/relevant)
-    return np.mean(recall)
-
-def MAP(recoms,test_set,k=10):
-
-    num_users = len(recoms)
-    test = test_set.A
-    ap=[]
-    for user in range(num_users):
-        ranking = np.array(recoms[user])
-        r=[]
-        dg =[]
-        relevant = test_set[user,:].count_nonzero()
-        if relevant == 0 or math.isnan(relevant):
-            continue
-        for item_id in ranking:
-            i = 1
-            real_value = test[user,item_id]
-            dg.append(1/i)
-            i+=1
-            if real_value==0:
-                r.append(real_value)
-            else:
-                r.append(1)
-        assert k >= 1
-        r = np.asarray(r)[:k] != 0
-        if r.size != k:
-            raise ValueError('Relevance score length < k')
-        dg = np.asarray(dg)[:k] != 0
-        if dg.size != k:
-            raise ValueError('Relevance score length < k')
-        ap.append(np.dot(r,dg)/relevant)
-    return np.mean(ap)
