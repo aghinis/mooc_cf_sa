@@ -6,11 +6,10 @@ import os
 import ast
 from functools import partial
 from pandasql import sqldf
-from plotnine import ggplot, geom_point, aes, stat_smooth, facet_wrap, geom_density, stat_ecdf, scale_color_discrete, theme
 
 from sklearn.decomposition import PCA
 import xgboost as xgb
-from sksurv.linear_model import CoxPHSurvivalAnalysis, CoxnetSurvivalAnalysis
+from sksurv.linear_model import  CoxnetSurvivalAnalysis
 from sksurv.ensemble import RandomSurvivalForest, GradientBoostingSurvivalAnalysis
 from sklearn.model_selection import train_test_split, cross_validate, cross_val_score
 import sksurv
@@ -23,7 +22,7 @@ from sklearn.model_selection import GridSearchCV, KFold
 from sklearn.metrics import make_scorer
 from baselines.knn import ItemKNNCFRecommender,UserKNNCFRecommender
 
-from helpers.measures import MAP, recall, ndcg, precision,ndcg_time
+from helpers.measures import ndcg, ndcg_time
 from helpers.utils import train_test_sp, train_test, df_to_mat ,threshold_interactions_df_mooc, matrix_to_df, recom_knn, re_ranker
 import helpers.tunning_param as tp
 from sklearn.decomposition import PCA
