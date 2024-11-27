@@ -5,7 +5,23 @@ This reposetory contains the code to reproduce the experiments for Enhancing Col
 ## Abstract 
 > Massive Open Online Courses (MOOCs) are emerging as a popular alternative to traditional education, offering learners the flexibility to access a wide range of courses from various disciplines, anytime and anywhere. Despite this accessibility, a significant number of enrollments in MOOCs result in dropouts. To enhance learner engagement, it is crucial to recommend courses that align with their preferences and needs. Course Recommender Systems (RSs) can play an important role in this by modeling learners' preferences based on their previous interactions within the MOOC platform. Time-to-dropout and time-to-completion in MOOCs, like other time-to-event prediction tasks, can be effectively modeled using survival analysis (SA) methods. In this study, we apply SA methods to improve collaborative filtering recommendation performance by considering time-to-event in the context of MOOCs. Our proposed approach demonstrates superior performance compared to collaborative filtering methods trained based on learners' interactions with MOOCs, as evidenced by two performance measures on three publicly available datasets. The findings underscore the potential of integrating SA methods with RSs to enhance personalization in MOOCs.
 
-## Repository structure and implementation
+## Reproducability
+
+The experiments can be reproduced using the `run_all_pca` function in `experiments.py`. This function will perform tuning for each survival model on both completion and dropout as the target. 
+
+#### Parameters:
+
+- **`dataset`** *(required, options=['Canvas','X','KDD'])*:  
+  A string for the dataset to perform experiments on. Loads the respective files and generates features
+
+- **`split_count`** *(optional, default=3)*:  
+  The number of hidden courses per user for the test set
+
+- **`min_completed`** *(optional, default=1)*:  
+  The minimum number of completed courses per user in the test set
+
+- **`normalize_time`** *(optional, default=True)*:  
+  Should time be normalized between 0 and 1 within each course
 
 ```plaintext
 mocc_cf_sa/
