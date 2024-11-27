@@ -23,6 +23,8 @@ The experiments can be reproduced using the `run_all_pca` function in `experimen
 - **`normalize_time`** *(optional, default=True)*:  
   Should time be normalized between 0 and 1 within each course
 
+## Repository structure
+
 ```plaintext
 mocc_cf_sa/
 ├── Base/                   # helper functions for baseline recommenders 
