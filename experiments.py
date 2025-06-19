@@ -6,10 +6,13 @@ import os
 import ast
 from functools import partial
 from pandasql import sqldf
+from plotnine import ggplot, geom_point, aes, stat_smooth, facet_wrap, geom_density, stat_ecdf, scale_color_discrete, theme
+#from baselines.IALSRecommender import IALSRecommender
 
+# from skopt import forest_minimize
 from sklearn.decomposition import PCA
 import xgboost as xgb
-from sksurv.linear_model import  CoxnetSurvivalAnalysis
+from sksurv.linear_model import CoxPHSurvivalAnalysis, CoxnetSurvivalAnalysis
 from sksurv.ensemble import RandomSurvivalForest, GradientBoostingSurvivalAnalysis
 from sklearn.model_selection import train_test_split, cross_validate, cross_val_score
 import sksurv
@@ -22,7 +25,7 @@ from sklearn.model_selection import GridSearchCV, KFold
 from sklearn.metrics import make_scorer
 from baselines.knn import ItemKNNCFRecommender,UserKNNCFRecommender
 
-from helpers.measures import ndcg, ndcg_time
+from helpers.measures import MAP, recall, ndcg, precision,ndcg_time
 from helpers.utils import train_test_sp, train_test, df_to_mat ,threshold_interactions_df_mooc, matrix_to_df, recom_knn, re_ranker
 import helpers.tunning_param as tp
 from sklearn.decomposition import PCA
@@ -37,12 +40,10 @@ import os
 import pickle 
 from hyperopt import STATUS_OK, Trials, fmin, hp, tpe
 from hyperopt.pyll.base import scope
-from baselines.IALSRecommender import IALSRecommender
-from baselines.SLIMElasticNetRecommender import SLIMElasticNetRecommender
-from baselines.EASE_R_Recommender import EASE_R_Recommender
-from baselines.PureSVDRecommender import PureSVDRecommender
-from baselines.NMFRecommender import NMFRecommender
 
+
+
+# Define a custom print function
 def log_print(*args):
     message = " ".join(map(str, args))
     print(message)  # Print to console
@@ -118,19 +119,47 @@ def replace_with_max(df, group_col, binary_col, replace_col):
 
 def load_dataset(name):
     if name == 'X':
+        # data=pd.read_csv("~/data/dropRS/dataset/xuentangx_processed_v2.csv")
+        # data=pd.read_csv("/home/u0111128/ml_codes/time_to_event/xuentangx_processed_v2.csv")
         data=pd.read_csv("xuentangx_processed_v2.csv")
 
         data["completed"] = data["completed"] + 1
+        #data.loc[:, 'days_spent'] = pd.to_timedelta(data.loc[:, 'days_spent']).dt.seconds/3600
         data.loc[:, 'days_spent'] = pd.to_timedelta(data.loc[:, 'days_spent']).dt.total_seconds()/86400
     elif name == 'KDD':
+        # data=pd.read_csv("~/data/dropRS/dataset/xuentangx_processed_v2.csv")
+        # data=pd.read_csv("/home/u0111128/ml_codes/time_to_event/xuentangx_processed_v2.csv")
         data=pd.read_csv("kddcup_processed.csv")
 
         data["completed"] = data["completed"] + 1
+        #data.loc[:, 'days_spent'] = pd.to_timedelta(data.loc[:, 'days_spent']).dt.seconds/3600
         data.loc[:, 'days_spent'] = pd.to_timedelta(data.loc[:, 'days_spent']).dt.total_seconds()/86400
     elif name == 'Canvas':
         cols_to_use = ['username','course_id','days_spent','completed']
         data=pd.read_csv("canvas_preprocessed.csv",index_col=False,usecols=cols_to_use)[cols_to_use]
+        #data.loc[:, 'days_spent'] = pd.to_timedelta(data.loc[:, 'days_spent']).dt.total_seconds()/86400
     return data
+
+def load_train_data(name):
+
+    if name == 'kdd':
+        df = pd.read_csv('../mooc_datasets/train_dfs/kdd_train_df.csv', low_memory=False)
+        df.loc[:, 'days_spent'] = pd.to_timedelta(df.loc[:, 'days_spent']).dt.days
+
+    elif name == 'xuen':
+        df = pd.read_csv('~/data/dropRS/dataset/xuentangx_v2_train_df.csv', low_memory=False)
+        df.loc[:, 'days_spent'] = pd.to_timedelta(df.loc[:, 'days_spent']).dt.seconds/3600
+
+    elif name == 'xuen1':
+        df = pd.read_csv('xuentangx_v1_train_df.csv', low_memory=False)
+        df.loc[:, 'days_spent'] = pd.to_timedelta(df.loc[:, 'days_spent']).dt.total_seconds()/86400
+
+    elif name == 'canvas':
+        df = pd.read_csv('canvas_train_df.csv', low_memory=False)
+        df.loc[:, 'days_spent'] = pd.to_timedelta(df.loc[:, 'days_spent']).dt.days
+        df = df.drop(columns='Unnamed: 0')
+
+    return df
 
 def df_to_matrix(df):
 
@@ -176,7 +205,7 @@ def train_xgb(df_x, df_y):
 
     return xgb_model
 
-def tune_and_fit_coxnet(X, y):
+def tune_and_fit_coxnet(dataset,X,y,event, tune=False):
     """
     Perform parameter tuning for Coxnet model and fit the final model.
 
@@ -187,6 +216,19 @@ def tune_and_fit_coxnet(X, y):
     Returns:
     CoxnetSurvivalAnalysis: Fitted Coxnet model with the best parameters.
     """
+
+    coxnet_params = {
+        'completion' : {
+            'X' : {'coxnetsurvivalanalysis__alphas': [0.0050]},
+            'KDD' : {'coxnetsurvivalanalysis__alphas':[0.0639] },
+            'Canvas': {'coxnetsurvivalanalysis__alphas':[0.236]},
+        },
+        'dropout' : {
+             'X' : {'coxnetsurvivalanalysis__alphas':[0.0039] },
+            'KDD' : {'coxnetsurvivalanalysis__alphas':[0.00941]} ,
+            'Canvas': {'coxnetsurvivalanalysis__alphas':[0.335]},
+        }
+    }
 
     coxnet_pipe = make_pipeline(StandardScaler(), CoxnetSurvivalAnalysis(l1_ratio=0.9, alpha_min_ratio=0.01, max_iter=100))
     warnings.simplefilter("ignore", UserWarning)
@@ -203,11 +245,12 @@ def tune_and_fit_coxnet(X, y):
         n_jobs=1,
     ).fit(X, y)
 
-
     coxnet_pred = make_pipeline(StandardScaler(), CoxnetSurvivalAnalysis(l1_ratio=0.9, fit_baseline_model=True))
-    coxnet_pred.set_params(**gcv.best_params_)
+    if tune == False:
+        coxnet_pred.set_params(**coxnet_params[event][dataset])
+    else:
+        coxnet_pred.set_params(**gcv.best_params_)
     coxnet_pred.fit(X, y)
-
     return coxnet_pred
 
 # get unlabelled data
@@ -243,6 +286,8 @@ def get_all_unlabelled_interactions(bin_mtx, u_b_int, u_t_int, c_b_int, c_t_int)
 
     unl_df = []
     unl_df_names = []
+    # unl_df = np.array([])
+    # unl_df_names = np.array([])
     l_rows, l_cols = bin_mtx.shape
 
     for i in range(l_rows):
@@ -306,11 +351,70 @@ def get_reliable_predictions(new_preds, n_int):
 
     return df_final_preds
 
-def tune_rsf(dataset,X,y,event):
+def tune_rsf(dataset,X,y,event,tune=False):
+    rsf_params = {
+        'completion' : {
+            'X' : {
+                'n_estimators': 100,
+                'max_features': 'sqrt',
+                'min_samples_leaf' : 13,
+                'min_samples_split' : 11,
+                'max_depth': 12,
+                'max_samples' : 0.5,
+                'n_jobs' : 10
+            },
+            'KDD' : {
+                'n_estimators': 100,
+                'max_features': 'sqrt',
+                'min_samples_leaf' : 12,
+                'min_samples_split' : 18,
+                'max_depth': 12,
+                'max_samples' : 0.5,
+                'n_jobs' : 10
+            },
+            'Canvas' : {
+                'n_estimators': 80,
+                'max_features': 'sqrt',
+                'min_samples_leaf' : 18,
+                'min_samples_split' : 20,
+                'max_depth': 9,
+                'max_samples' : 0.5,
+                'n_jobs' : 10
+            }
+        },
+        'dropout' : {
+            'X' : {
+            'n_estimators': 100,
+            'max_features': 'sqrt',
+            'min_samples_leaf' : 13,
+            'min_samples_split' : 11,
+            'max_depth': 12,
+            'max_samples' : 0.5,
+            'n_jobs' : 10
+        },
+        'KDD' : {
+            'n_estimators': 100,
+            'max_features': 'sqrt',
+            'min_samples_leaf' : 12,
+            'min_samples_split' : 18,
+            'max_depth': 12,
+            'max_samples' : 0.5,
+            'n_jobs' : 10
+        },
+        'Canvas' : {
+            'n_estimators': 80,
+            'max_features': 'sqrt',
+            'min_samples_leaf' : 18,
+            'min_samples_split' : 20,
+            'max_depth': 9,
+            'max_samples' : 0.5,
+            'n_jobs' : 10
+        }
+        }
+    }
     fname = f'trained_models/{dataset}_{event}_rsf.pkl'
-    if os.path.exists(fname):
-        with open(fname, 'rb') as file:
-            model = pickle.load(file)
+    if tune==False:
+        model = RandomSurvivalForest(**rsf_params[event][dataset]).fit(X,y)
     else:
         tree_params = {
         'n_estimators': scope.int(hp.quniform('n_estimators',25,100,q=1)),
@@ -341,16 +445,76 @@ def tune_rsf(dataset,X,y,event):
         result['n_jobs'] = 10
         result['max_samples'] = 0.5
         model = RandomSurvivalForest(**result).fit(X,y)
-        with open(fname,'wb') as file:
-            pickle.dump(model,file)
-
+    with open(fname,'wb') as file:
+        pickle.dump(model,file)
     return model
 
-def tune_boosted(dataset,X,y,event):
-    fname = f'trained_models/{dataset}_{event}_xgb.pkl'
-    if os.path.exists(fname):
-        with open(fname, 'rb') as file:
-            model = pickle.load(file)
+def tune_boosted(dataset,X,y,event, tune=False):
+    fname  = f'trained_models/{dataset}_{event}_xgb.pkl'
+    xgb_params = {
+        'completion' : {
+            'X' : {
+                'learning_rate': 0.3835277306131044,
+                'n_estimators': 173,
+                'max_features': 'sqrt',
+                'min_samples_leaf' : 18,
+                'min_samples_split' : 13,
+                'max_depth': 5,
+                'subsample' : 0.5 
+            },
+            'Canvas' : {
+                'learning_rate': 0.11176503359259893,
+                'n_estimators': 153,
+                'max_features': 'sqrt',
+                'min_samples_leaf' : 10,
+                'min_samples_split' : 12,
+                'max_depth': 10,
+                'subsample' : 0.5 
+
+            },
+            'KDD' : {
+                'learning_rate': 0.1495643837287974,
+                'n_estimators': 124,
+                'max_features': 'sqrt',
+                'min_samples_leaf' : 8,
+                'min_samples_split' : 12,
+                'max_depth': 3,
+                'subsample' : 0.5 
+            }
+            },
+        'dropout' : {
+                'X' : {
+                'learning_rate': 0.2770816286226958,
+                'n_estimators': 184,
+                'max_features': 'sqrt',
+                'min_samples_leaf' : 16,
+                'min_samples_split' : 6,
+                'max_depth': 7,
+                'subsample' : 0.5 
+            },
+            'Canvas' : {
+                'learning_rate': 0.12471647045579379,
+                'n_estimators': 199,
+                'max_features': 'sqrt',
+                'min_samples_leaf' : 15,
+                'min_samples_split' : 17,
+                'max_depth': 12,
+                'subsample' : 0.5 
+
+            },
+            'KDD' : {
+                'learning_rate': 0.41242104750758624,
+                'n_estimators': 121,
+                'max_features': 'sqrt',
+                'min_samples_leaf' : 16,
+                'min_samples_split' : 6,
+                'max_depth': 16,
+                'subsample' : 0.5 
+            }
+            }
+        }
+    if tune ==False:
+        model = GradientBoostingSurvivalAnalysis(**xgb_params[event][dataset]).fit(X,y)
     else:
         tree_params = {
         'learning_rate': hp.uniform('learning_rate',0.1,1),
@@ -381,9 +545,10 @@ def tune_boosted(dataset,X,y,event):
         result['n_jobs'] = 10
         result['subsample'] = 0.5
         model = GradientBoostingSurvivalAnalysis(**result).fit(X,y)
-        with open(fname,'wb') as file:
-            pickle.dump(model,file)
+    with open(fname,'wb') as file:
+        pickle.dump(model,file)
     return model
+
 
 course_mapping_dict = {
     'course-v1:FUDANx+ECON130007_01+2016_T1' : 'course-v1:FUDANx+ECON130007_01+2016_T2',
@@ -474,12 +639,13 @@ course_mapping_dict = {
 
 }
 
-def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True):
+
+def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True, tune_models=False):
     log_print(f"\n Starting: {dataset} split_count={split_count}, min_completed = {min_completed}, normalized_time={normalize_time}, PCA on intercations")
     num_folds_tunning = 3
     tunning = False
     njobs = -1
-    random_seed = 1
+    random_seed = np.random.randint(100)
     #############################
     random.seed(random_seed)
     np.random.seed(random_seed)
@@ -499,6 +665,9 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True):
         data = threshold_interactions_df_mooc(data, "username","course_id", 5, 3)
     else:
         data = threshold_interactions_df_mooc(data, "username","course_id", 5, 3)
+
+    if dataset == 'Canvas':
+        data = data[data['username']!=832988535]
 
     interactions,rid_to_idx, idx_to_rid, cid_to_idx, idx_to_cid = df_to_mat(data,"username","course_id","completed")
     train_set,test_set,users_set = train_test_sp(interactions,split_count=split_count,min_completed=min_completed)
@@ -525,6 +694,7 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True):
 
     #
     df = train_df_time.dropna()
+    #df = df.sample(frac=0.05, replace=False, random_state=2)
     bin_mtx, time_mtx = df_to_matrix(df)
     u_b_int, u_t_int, c_b_int, c_t_int = get_interaction_feats(bin_mtx, time_mtx)
     u_b_int.columns = [f'{col}_u_b' for col in u_b_int.columns]
@@ -533,6 +703,7 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True):
     c_t_int.columns = [f'{col}_c_t' for col in c_t_int.columns]
 
     df2 = min_max_normalize(df,['course_id','completed'],'days_spent')
+    #df2 = df2.sample(frac=0.05, replace=False, random_state=2)
     bin_mtx, time_mtx = df_to_matrix(df2)
     u_b_int, u_t_int, c_b_int, c_t_int = get_interaction_feats(bin_mtx, time_mtx)
     u_b_int.columns = [f'{col}_u_b' for col in u_b_int.columns]
@@ -567,72 +738,81 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True):
         order by username 
         ''').set_index('username')
     if normalize_time:
-        df_with_feats1 = df2.loc[:, ['username', 'course_id', 'days_spent', 'completed']].join(u_b_int, on='username', how='left')
+        df_with_feats1 = df2.loc[:, ['username', 'course_id', 'days_spent', 'completed']].join(u_b_int, on='username', how='left')#, rsuffix='_u_b')
     else:
-        df_with_feats1 = df.loc[:, ['username', 'course_id', 'days_spent', 'completed']].join(u_b_int, on='username', how='left')
-    df_with_feats1 = df_with_feats1.join(u_t_int, on='username', how='left')
-    df_with_feats1 = df_with_feats1.join(c_b_int, on='course_id', how='left')
-    df_with_feats1 = df_with_feats1.join(c_t_int, on='course_id', how='left')
+        df_with_feats1 = df.loc[:, ['username', 'course_id', 'days_spent', 'completed']].join(u_b_int, on='username', how='left')#, rsuffix='_u_b')
+    df_with_feats1 = df_with_feats1.join(u_t_int, on='username', how='left')# rsuffix='_u_t')
+    df_with_feats1 = df_with_feats1.join(c_b_int, on='course_id', how='left')# rsuffix='_c_b')
+    df_with_feats1 = df_with_feats1.join(c_t_int, on='course_id', how='left')# rsuffix='_c_t')
     if dataset=='X':
-        df_with_feats1 = df_with_feats1.merge(feature_course, on='course_id')
-    df_with_feats1 = df_with_feats1.merge(user_features, on='username')
+        df_with_feats1 = df_with_feats1.merge(feature_course, on='course_id')# how='left')
+    df_with_feats1 = df_with_feats1.merge(user_features, on='username')# how='left')
 
     X_train = df_with_feats1.drop(columns=['username', 'course_id', 'days_spent', 'completed'])
     y_train = df_with_feats1.loc[:, ['days_spent', 'completed']]
     X_train.head()
 
     pca_pipeline_1 = Pipeline([
-        ('scaler', StandardScaler()), 
+        ('scaler', StandardScaler()),  # Optional: standardize the data before PCA
         ('pca', PCA(n_components=0.8, svd_solver = 'full'))
     ])        
+    # Combine transformers with ColumnTransformer
     preprocessor = ColumnTransformer(
         transformers=[
             ('pca1', pca_pipeline_1, u_b_int.columns.tolist()+u_t_int.columns.tolist()+ c_b_int.columns.tolist()+c_t_int.columns.tolist()),
             ('user_scaler', StandardScaler(), user_features.columns.tolist()),
-
+        #  ('education_dummies', OneHotEncoder(drop='first'), ['education']),
+        # ('sex_dummy', OneHotEncoder(drop='first'), ['gender']) 
         ]
     )
     transformed_data = preprocessor.fit_transform(X_train)
     pca1_names = [f'PCA_bin{i+1}' for i in range(len(preprocessor.named_transformers_['pca1'].named_steps['pca'].explained_variance_))]
-    final_column_names = pca1_names  + user_features.columns.tolist() 
+    final_column_names = pca1_names  + user_features.columns.tolist() #+ pca3_names + age_name# + list(education_names) + list(sex_names)
 
     transformed_df = pd.DataFrame(transformed_data, columns=final_column_names)
     # define dropout
-    y_test = [(True,t[0]) if t[1]==1 else (False,t[0]) for t in y_train.values]
-    y_test = np.array(y_test, dtype=[('Status', '?'), ('Survival_in_days', '<f8')])
+    y_test_dropout = [(True,t[0]) if t[1]==1 else (False,t[0]) for t in y_train.values]
+    y_test_dropout = np.array(y_test_dropout, dtype=[('Status', '?'), ('Survival_in_days', '<f8')])
     # define completion
-    y_test_2 = [(True,t[0]) if t[1]==2 else (False,t[0]) for t in y_train.values]
-    y_test_2 = np.array(y_test_2, dtype=[('Status', '?'), ('Survival_in_days', '<f8')])
+    y_test_completion = [(True,t[0]) if t[1]==2 else (False,t[0]) for t in y_train.values]
+    y_test_completion = np.array(y_test_completion, dtype=[('Status', '?'), ('Survival_in_days', '<f8')])
     ranking_results = list()
-    surv_models = ['Coxnet','rsf','XGb']
+    #surv_models = ['Coxnet','rsf','XGb']
+    surv_models = ['Coxnet']
     for surv_model in surv_models: 
         log_print(f'Starting {surv_model}')
         if surv_model == 'Coxnet': 
             print("training dropout")
-            model_dropout = tune_and_fit_coxnet(transformed_df, y_test)
+            model_dropout = tune_and_fit_coxnet(dataset,transformed_df, y_test_dropout,'dropout',tune=tune_models)
             print("Training Completion")
-            model_completion = tune_and_fit_coxnet(transformed_df, y_test_2)
+            model_completion = tune_and_fit_coxnet(dataset,transformed_df, y_test_completion,'completion',tune=tune_models)
         elif surv_model =='rsf':
             print("training dropout")
-            model_dropout = tune_rsf(dataset,transformed_df, y_test,'dropout')
+            model_dropout = tune_rsf(dataset,transformed_df, y_test_dropout,'dropout',tune=tune_models)
             print("Training Completion")
-            model_completion = tune_rsf(dataset,transformed_df, y_test_2, 'completion')
+            model_completion = tune_rsf(dataset,transformed_df, y_test_completion, 'completion',tune=tune_models)
         elif surv_model == 'XGb':
             print("training dropout")
-            model_dropout = tune_boosted(dataset,transformed_df, y_test,'dropout')
+            model_dropout = tune_boosted(dataset,transformed_df, y_test_dropout,'dropout',tune=tune_models)
             print("Training Completion")
-            model_completion = tune_boosted(dataset,transformed_df, y_test,'completion')
-        log_print(f'Dropout C-index {surv_model}: {cross_val_score(model_dropout,transformed_df, y_test,cv=5, n_jobs=-1).mean()}')
-        log_print(f'Completion C-index {surv_model}: {cross_val_score(model_completion,transformed_df, y_test,cv=5, n_jobs=-1).mean()}')
-        print(model_dropout)
+            model_completion = tune_boosted(dataset,transformed_df, y_test_completion,'completion',tune=tune_models)
+        cv = KFold(n_splits=10, shuffle=True, random_state=0)
+        cv_fold_dropout = cross_val_score(model_dropout,transformed_df, y_test_dropout,cv=cv, n_jobs=-1)
+        cv_fold_completion = cross_val_score(model_completion,transformed_df, y_test_completion,cv=cv, n_jobs=-1)
+        log_print(f'Dropout C-index {surv_model}: {cv_fold_dropout.mean()} with {cv_fold_dropout}')
+        log_print(f'Completion C-index {surv_model}: {cv_fold_completion.mean()} with {cv_fold_completion}')
+        c_index_results = pd.DataFrame({'dataset': dataset,
+                                        'model' : surv_model,
+                                        'c_index_dropout':cv_fold_dropout,
+                                        'c_index_completion':cv_fold_completion})
         stacked_bin_mtx = bin_mtx.where(bin_mtx == 0).stack(level=0)
         batch_size = 10000
         num_rows = len(stacked_bin_mtx)
-        num_batches = (num_rows + batch_size - 1) // batch_size 
+        num_batches = (num_rows + batch_size - 1) // batch_size  # Calculate the number of batches
 
         def process_batch(batch):
             num_rows = len(batch)
-            num_cols = X_train.shape[1] 
+            num_cols = X_train.shape[1] # u_b_int.shape[1] + u_t_int.shape[1] + c_b_int.shape[1] + c_t_int.shape[1] + kk.shape[1]
             batch_array = np.empty((num_rows, num_cols), dtype=float)
             
             for idx, (stud_id, cours_id) in enumerate(batch):
@@ -688,7 +868,13 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True):
 
         print("unlabeled for 0 ",len(new_unl_df_names.loc[new_unl_df_names['username']==0]))
 
+            ######################################
+        ##### PART 1 - Train, Tune and test RSs #######
+        ######################################
         scores = {
+                    # "BPR":{"ndcg":[],"MAP":[],"recall":[],"precision":[],"h_param":['epochs','no_components','learning_rate','item_alpha','user_alpha'],"h_param_range":[(50, 350),(10,300),(10**-5, 10**-1, 'log-uniform'),(10**-7, 10**-1, 'log-uniform'),(10**-6, 10**-1, 'log-uniform')],'best_param':[336, 207, 5.596974933016647e-05, 0.0005605913885321211, 0.07893887705085302]},
+                # "WARP":{"ndcg":[],"MAP":[],"recall":[],"precision":[],"h_param":['epochs','no_components','learning_rate','item_alpha','user_alpha'],"h_param_range":[(50, 350),(10,300),(10**-5, 10**-1, 'log-uniform'),(10**-7, 10**-1, 'log-uniform'),(10**-6, 10**-1, 'log-uniform')],'best_param':[268, 226, 7.01854105327644e-05, 0.006705265022562404, 0.01602820393938058]},
+                # "MVAE":{"ndcg":[],"h_param":['epochs','batch_size','total_anneal_steps'],"h_param_range":[(10,250),(25,500),(100000,300000)],'best_param':[99, 391, 127354]},
                 "EASE":{"ndcg":[],"h_param":['topK', 'l2_norm'],"h_param_range":[[None],(1e0, 1e7)],'best_param':{"X":[None, 95109.6942962282],"Canvas":[None, 9325573.660829231],"KDD":[None, 2540.6584595004156]}},
                 "UKNN":{"ndcg":[],"h_param":['topK', 'shrink'],"h_param_range":[(20, 800),(0,1000)],'best_param':{"X":[301, 178],"Canvas":[128, 8],"KDD":[488, 907]}},
                 "IKNN":{"ndcg":[],"h_param":['topK', 'shrink'],"h_param_range":[(20, 800),(0,1000)],'best_param':{"X":[70, 350],"Canvas":[789, 793],"KDD":[37, 194]}},
@@ -699,77 +885,84 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True):
                     }
 
         print("trainging and testing  RSs")
-        for baseline in ["EASE","UKNN","IKNN",'SVD','NMF','SLIM', 'IALS']: 
-            print(baseline)
-            train_rs = train_set.copy()
-            best_CF_model = baseline
-            if baseline == 'UKNN':
-                cf_model = UserKNNCFRecommender(train_rs)
-            elif baseline == 'IKNN':
-                cf_model = ItemKNNCFRecommender(train_rs)
-            elif baseline == 'IALS':
-                cf_model = IALSRecommender(train_rs)
-            elif baseline == 'SLIM':
-                cf_model = SLIMElasticNetRecommender(train_rs)
-            elif baseline == 'EASE':
-                cf_model = EASE_R_Recommender(train_rs)
-            elif baseline == 'NMF':
-                cf_model = NMFRecommender(train_rs)
-            elif baseline == 'SVD':
-                cf_model = PureSVDRecommender(train_rs)
+        #
+        train_rs = train_set.copy()
+        # for row, col in zip(*train_rs.nonzero()):
+        #     if train_rs[row, col] == 2:
+        #         train_rs[row, col] = 1
+        best_CF_model = "UKNN"
+        cf_model = UserKNNCFRecommender(train_rs)
+        best_param_list = scores[best_CF_model]['best_param'][dataset]
+        best_param = dict(zip(scores[best_CF_model]["h_param"], best_param_list))
+        cf_model.fit(**best_param)
+        recom = recom_knn(cf_model,train_rs)
 
-            
-            best_param_list = scores[best_CF_model]['best_param'][dataset]
-            best_param = dict(zip(scores[best_CF_model]["h_param"], best_param_list))
-            cf_model.fit(**best_param)
-            recom = recom_knn(cf_model,train_rs)
 
-            l_list = [5,8,10]
-            k_list = [3,5]
-            log_print('Performance RE-RANKING')
-            for k in k_list:
-                for i in l_list:
-                    log_print(f"k={k} Length list ={i} ", i)
-                    log_print(f"{baseline}: ndcg of ",best_CF_model," ",ndcg(recom,test_set,k=k))
-                    log_print("ndcg of ",f'{surv_model} on dropout'," ",ndcg(recomm_surv_1,test_set,k=k))
-                    log_print("ndcg of ",f'{surv_model} on completion'," ",ndcg(recomm_surv_2,test_set,k=k))
-                    log_print(" ndcg of ",f'{surv_model} on both'," ",ndcg(recomm_surv_3,test_set,k=k))
-                    re_ranked_list1 = re_ranker(recom,recomm_surv_1,i,k)
-                    re_ranked_list2 = re_ranker(recom,recomm_surv_2,i,k)
-                    re_ranked_list3 = re_ranker(recom,recomm_surv_3,i,k)
-                    log_print(f"{baseline} ndcg of re-ranking (base = recom and {surv_model} on dropout): ",    ndcg(re_ranked_list1,test_set,k=k))
-                    log_print(f"{baseline} ndcg of re-ranking (base = recom and {surv_model} on completion): ",    ndcg(re_ranked_list2,test_set,k=k))
-                    log_print(f"{baseline} ndcg of re-ranking (base = recom and {surv_model} on both): ",    ndcg(re_ranked_list3,test_set,k=k))
-                    log_print(f"{baseline} ndcg-time of re-ranking (base = recom and {surv_model} on dropout): ",    ndcg_time(re_ranked_list1,test_set,test_time,k=k))
-                    log_print(f"{baseline} ndcg-time of re-ranking (base = recom and {surv_model} on completion): ",    ndcg_time(re_ranked_list2,test_set,test_time,k=k))
-                    log_print(f"{baseline} ndcg-time of re-ranking (base = recom and {surv_model} on both): ",    ndcg_time(re_ranked_list3,test_set,test_time,k=k))
+        print("Performance BASE MODEL")
+        print("ndcg of ",best_CF_model," ",ndcg(recom,test_set,k=3))
 
-                    tmp_res =  [surv_model,baseline,k,i,ndcg(recom,test_set,k=k),ndcg(recomm_surv_1,test_set,k=k),ndcg(recomm_surv_2,test_set,k=k),ndcg(recomm_surv_3,test_set,k=k),ndcg(re_ranked_list1,test_set,k=k),ndcg(re_ranked_list2,test_set,k=k),ndcg(re_ranked_list3,test_set,k=k),ndcg_time(re_ranked_list1,test_set,test_time,k=k),ndcg_time(re_ranked_list2,test_set,test_time,k=k),ndcg_time(re_ranked_list3,test_set,test_time,k=k)]
-                    ranking_results.append(tmp_res)
+        print("Performance COXNet")
+        print("ndcg of ",f'{surv_model}'," ",ndcg(recomm_surv_1,test_set,k=3))
+    
+        l_list = [5,8,10]
+        k_list = [3,5]
+        log_print('Performance RE-RANKING')
+        for k in k_list:
+            for i in l_list:
+                log_print(f"k={k} Length list ={i} ", i)
+                log_print("ndcg of ",best_CF_model," ",ndcg(recom,test_set,k=k))
+                log_print("ndcg of ",f'{surv_model} on dropout'," ",ndcg(recomm_surv_1,test_set,k=k))
+                log_print("ndcg of ",f'{surv_model} on completion'," ",ndcg(recomm_surv_2,test_set,k=k))
+                log_print("ndcg of ",f'{surv_model} on both'," ",ndcg(recomm_surv_3,test_set,k=k))
+                re_ranked_list1 = re_ranker(recom,recomm_surv_1,i,k)
+                re_ranked_list2 = re_ranker(recom,recomm_surv_2,i,k)
+                re_ranked_list3 = re_ranker(recom,recomm_surv_3,i,k)
+                log_print(f"ndcg of re-ranking (base = recom and {surv_model} on dropout): ",    ndcg(re_ranked_list1,test_set,k=k))
+                log_print(f"ndcg of re-ranking (base = recom and {surv_model} on completion): ",    ndcg(re_ranked_list2,test_set,k=k))
+                log_print(f"ndcg of re-ranking (base = recom and {surv_model} on both): ",    ndcg(re_ranked_list3,test_set,k=k))
+                log_print(f"ndcg-time of re-ranking (base = recom and {surv_model} on dropout): ",    ndcg_time(re_ranked_list1,test_set,test_time,k=k))
+                log_print(f"ndcg-time of re-ranking (base = recom and {surv_model} on completion): ",    ndcg_time(re_ranked_list2,test_set,test_time,k=k))
+                log_print(f"ndcg-time of re-ranking (base = recom and {surv_model} on both): ",    ndcg_time(re_ranked_list3,test_set,test_time,k=k))
+
+                tmp_res =  [surv_model,k,i,ndcg(recom,test_set,k=k),ndcg(recomm_surv_1,test_set,k=k),ndcg(recomm_surv_2,test_set,k=k),ndcg(recomm_surv_3,test_set,k=k),ndcg(re_ranked_list1,test_set,k=k),ndcg(re_ranked_list2,test_set,k=k),ndcg(re_ranked_list3,test_set,k=k),ndcg_time(re_ranked_list1,test_set,test_time,k=k),ndcg_time(re_ranked_list2,test_set,test_time,k=k),ndcg_time(re_ranked_list3,test_set,test_time,k=k)]
+                # if dataset != 'Canvas':
+                #     re_ranked_list2 = re_ranker(recomm_surv_1,recom,i,k)
+                #     log_print("ndcg of re-ranking (base = surv): ",    ndcg(re_ranked_list2,test_set,k=k))
+                ranking_results.append(tmp_res)
     run_results = pd.DataFrame(ranking_results)
-    run_results.columns = ['surv_model', 'baseline_model', 'k','list length','ndcg uknn','ndcg coxnet dropout','ndcg coxnet complete','ndcg coxnet both','ndcg re-rank dropout','ndcg re-rank completion','ndcg re-rank both','ndcg-time re-rank dropout','ndcg-time re-rank completion','ndcg-time re-rank both']
-    return run_results
+    run_results.columns = ['surv_model', 'k','list length','ndcg uknn','ndcg coxnet dropout','ndcg coxnet complete','ndcg coxnet both','ndcg re-rank dropout','ndcg re-rank completion','ndcg re-rank both','ndcg-time re-rank dropout','ndcg-time re-rank completion','ndcg-time re-rank both']
+    return run_results, c_index_results
 
-version = 'final_runs'
+version = 'revision_runs'
 split_counts = [3] 
 min_completeds = [1]
-datasets = ['Canvas','X','KDD']
+#datasets = ['Canvas','X','KDD']
+datasets = ['Canvas']
 full_results = []
+c_index_results = []
 for dataset in datasets:
-    logging.basicConfig(filename=f'{dataset}_experiments.txt', level=logging.INFO, format='%(message)s')
+    logging.basicConfig(filename=f'{dataset}_experiments_v{version}.txt', level=logging.INFO, format='%(message)s')
     for split_count in split_counts:
         for min_completed in min_completeds:
             if min_completed <= split_count:
-                run_results = run_all_pca(dataset=dataset,split_count=split_count,min_completed=min_completed)
-                run_results['split count'] = split_count
-                run_results['min_completed'] = min_completed
-                run_results['dataset'] = dataset
-                full_results.append(run_results)
-                log_print(run_results)
-            else:
-                pass
-logging.basicConfig(filename=f'final_experiments_v{version}.txt', level=logging.INFO, format='%(message)s')
+                for iteration in range(0,2):
+                    print(iteration)
+                    all_results = run_all_pca(dataset=dataset,split_count=split_count,min_completed=min_completed)
+                    run_results = all_results[0]
+                    run_results['split count'] = split_count
+                    run_results['min_completed'] = min_completed
+                    run_results['dataset'] = dataset
+                    run_results['iteration'] = iteration
+                    full_results.append(run_results)
+                    log_print(run_results)
+                    c_index_run = all_results[1]
+                    c_index_run['split count'] = split_count
+                    c_index_run['min_completed'] = min_completed
+                    c_index_run['dataset'] = dataset
+                    c_index_run['iteration'] = iteration
+                    c_index_results.append(c_index_run)
+logging.basicConfig(filename=f'trial_new{version}.txt', level=logging.INFO, format='%(message)s')
 log_print('All results')
 log_print(pd.concat(full_results))
-pd.concat(full_results).to_csv(f'final_experiments_{version}.csv')
-
+pd.concat(full_results).to_csv(f'nn_{version}.csv')
+pd.concat(c_index_results).to_csv(f'c_index_{version}.csv')
