@@ -6,13 +6,10 @@ import os
 import ast
 from functools import partial
 from pandasql import sqldf
-from plotnine import ggplot, geom_point, aes, stat_smooth, facet_wrap, geom_density, stat_ecdf, scale_color_discrete, theme
-#from baselines.IALSRecommender import IALSRecommender
 
-# from skopt import forest_minimize
 from sklearn.decomposition import PCA
 import xgboost as xgb
-from sksurv.linear_model import CoxPHSurvivalAnalysis, CoxnetSurvivalAnalysis
+from sksurv.linear_model import  CoxnetSurvivalAnalysis
 from sksurv.ensemble import RandomSurvivalForest, GradientBoostingSurvivalAnalysis
 from sklearn.model_selection import train_test_split, cross_validate, cross_val_score
 import sksurv
@@ -25,7 +22,7 @@ from sklearn.model_selection import GridSearchCV, KFold
 from sklearn.metrics import make_scorer
 from baselines.knn import ItemKNNCFRecommender,UserKNNCFRecommender
 
-from helpers.measures import MAP, recall, ndcg, precision,ndcg_time
+from helpers.measures import ndcg, ndcg_time
 from helpers.utils import train_test_sp, train_test, df_to_mat ,threshold_interactions_df_mooc, matrix_to_df, recom_knn, re_ranker
 import helpers.tunning_param as tp
 from sklearn.decomposition import PCA
@@ -40,6 +37,11 @@ import os
 import pickle 
 from hyperopt import STATUS_OK, Trials, fmin, hp, tpe
 from hyperopt.pyll.base import scope
+from baselines.IALSRecommender import IALSRecommender
+from baselines.SLIMElasticNetRecommender import SLIMElasticNetRecommender
+from baselines.EASE_R_Recommender import EASE_R_Recommender
+from baselines.PureSVDRecommender import PureSVDRecommender
+from baselines.NMFRecommender import NMFRecommender
 
 
 
@@ -777,8 +779,7 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True, tune
     y_test_completion = [(True,t[0]) if t[1]==2 else (False,t[0]) for t in y_train.values]
     y_test_completion = np.array(y_test_completion, dtype=[('Status', '?'), ('Survival_in_days', '<f8')])
     ranking_results = list()
-    #surv_models = ['Coxnet','rsf','XGb']
-    surv_models = ['Coxnet']
+    surv_models = ['Coxnet','rsf','XGb']
     for surv_model in surv_models: 
         log_print(f'Starting {surv_model}')
         if surv_model == 'Coxnet': 
@@ -885,59 +886,58 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True, tune
                     }
 
         print("trainging and testing  RSs")
-        #
-        train_rs = train_set.copy()
-        # for row, col in zip(*train_rs.nonzero()):
-        #     if train_rs[row, col] == 2:
-        #         train_rs[row, col] = 1
-        best_CF_model = "UKNN"
-        cf_model = UserKNNCFRecommender(train_rs)
-        best_param_list = scores[best_CF_model]['best_param'][dataset]
-        best_param = dict(zip(scores[best_CF_model]["h_param"], best_param_list))
-        cf_model.fit(**best_param)
-        recom = recom_knn(cf_model,train_rs)
+        for baseline in ["EASE","UKNN","IKNN",'SVD','NMF','SLIM', 'IALS']: 
+            print(baseline)
+            train_rs = train_set.copy()
+            best_CF_model = baseline
+            if baseline == 'UKNN':
+                cf_model = UserKNNCFRecommender(train_rs)
+            elif baseline == 'IKNN':
+                cf_model = ItemKNNCFRecommender(train_rs)
+            elif baseline == 'IALS':
+                cf_model = IALSRecommender(train_rs)
+            elif baseline == 'SLIM':
+                cf_model = SLIMElasticNetRecommender(train_rs)
+            elif baseline == 'EASE':
+                cf_model = EASE_R_Recommender(train_rs)
+            elif baseline == 'NMF':
+                cf_model = NMFRecommender(train_rs)
+            elif baseline == 'SVD':
+                cf_model = PureSVDRecommender(train_rs)            
+            best_param_list = scores[best_CF_model]['best_param'][dataset]
+            best_param = dict(zip(scores[best_CF_model]["h_param"], best_param_list))
+            cf_model.fit(**best_param)
+            recom = recom_knn(cf_model,train_rs)
+            l_list = [5,8,10]
+            k_list = [3,5]
+            log_print('Performance RE-RANKING')
+            for k in k_list:
+                for i in l_list:
+                    log_print(f"k={k} Length list ={i} ", i)
+                    log_print(f"{baseline}: ndcg of ",best_CF_model," ",ndcg(recom,test_set,k=k))
+                    log_print("ndcg of ",f'{surv_model} on dropout'," ",ndcg(recomm_surv_1,test_set,k=k))
+                    log_print("ndcg of ",f'{surv_model} on completion'," ",ndcg(recomm_surv_2,test_set,k=k))
+                    log_print(" ndcg of ",f'{surv_model} on both'," ",ndcg(recomm_surv_3,test_set,k=k))
+                    re_ranked_list1 = re_ranker(recom,recomm_surv_1,i,k)
+                    re_ranked_list2 = re_ranker(recom,recomm_surv_2,i,k)
+                    re_ranked_list3 = re_ranker(recom,recomm_surv_3,i,k)
+                    log_print(f"{baseline} ndcg of re-ranking (base = recom and {surv_model} on dropout): ",    ndcg(re_ranked_list1,test_set,k=k))
+                    log_print(f"{baseline} ndcg of re-ranking (base = recom and {surv_model} on completion): ",    ndcg(re_ranked_list2,test_set,k=k))
+                    log_print(f"{baseline} ndcg of re-ranking (base = recom and {surv_model} on both): ",    ndcg(re_ranked_list3,test_set,k=k))
+                    log_print(f"{baseline} ndcg-time of re-ranking (base = recom and {surv_model} on dropout): ",    ndcg_time(re_ranked_list1,test_set,test_time,k=k))
+                    log_print(f"{baseline} ndcg-time of re-ranking (base = recom and {surv_model} on completion): ",    ndcg_time(re_ranked_list2,test_set,test_time,k=k))
+                    log_print(f"{baseline} ndcg-time of re-ranking (base = recom and {surv_model} on both): ",    ndcg_time(re_ranked_list3,test_set,test_time,k=k))
 
-
-        print("Performance BASE MODEL")
-        print("ndcg of ",best_CF_model," ",ndcg(recom,test_set,k=3))
-
-        print("Performance COXNet")
-        print("ndcg of ",f'{surv_model}'," ",ndcg(recomm_surv_1,test_set,k=3))
-    
-        l_list = [5,8,10]
-        k_list = [3,5]
-        log_print('Performance RE-RANKING')
-        for k in k_list:
-            for i in l_list:
-                log_print(f"k={k} Length list ={i} ", i)
-                log_print("ndcg of ",best_CF_model," ",ndcg(recom,test_set,k=k))
-                log_print("ndcg of ",f'{surv_model} on dropout'," ",ndcg(recomm_surv_1,test_set,k=k))
-                log_print("ndcg of ",f'{surv_model} on completion'," ",ndcg(recomm_surv_2,test_set,k=k))
-                log_print("ndcg of ",f'{surv_model} on both'," ",ndcg(recomm_surv_3,test_set,k=k))
-                re_ranked_list1 = re_ranker(recom,recomm_surv_1,i,k)
-                re_ranked_list2 = re_ranker(recom,recomm_surv_2,i,k)
-                re_ranked_list3 = re_ranker(recom,recomm_surv_3,i,k)
-                log_print(f"ndcg of re-ranking (base = recom and {surv_model} on dropout): ",    ndcg(re_ranked_list1,test_set,k=k))
-                log_print(f"ndcg of re-ranking (base = recom and {surv_model} on completion): ",    ndcg(re_ranked_list2,test_set,k=k))
-                log_print(f"ndcg of re-ranking (base = recom and {surv_model} on both): ",    ndcg(re_ranked_list3,test_set,k=k))
-                log_print(f"ndcg-time of re-ranking (base = recom and {surv_model} on dropout): ",    ndcg_time(re_ranked_list1,test_set,test_time,k=k))
-                log_print(f"ndcg-time of re-ranking (base = recom and {surv_model} on completion): ",    ndcg_time(re_ranked_list2,test_set,test_time,k=k))
-                log_print(f"ndcg-time of re-ranking (base = recom and {surv_model} on both): ",    ndcg_time(re_ranked_list3,test_set,test_time,k=k))
-
-                tmp_res =  [surv_model,k,i,ndcg(recom,test_set,k=k),ndcg(recomm_surv_1,test_set,k=k),ndcg(recomm_surv_2,test_set,k=k),ndcg(recomm_surv_3,test_set,k=k),ndcg(re_ranked_list1,test_set,k=k),ndcg(re_ranked_list2,test_set,k=k),ndcg(re_ranked_list3,test_set,k=k),ndcg_time(re_ranked_list1,test_set,test_time,k=k),ndcg_time(re_ranked_list2,test_set,test_time,k=k),ndcg_time(re_ranked_list3,test_set,test_time,k=k)]
-                # if dataset != 'Canvas':
-                #     re_ranked_list2 = re_ranker(recomm_surv_1,recom,i,k)
-                #     log_print("ndcg of re-ranking (base = surv): ",    ndcg(re_ranked_list2,test_set,k=k))
-                ranking_results.append(tmp_res)
+                    tmp_res =  [surv_model,baseline,k,i,ndcg(recom,test_set,k=k),ndcg(recomm_surv_1,test_set,k=k),ndcg(recomm_surv_2,test_set,k=k),ndcg(recomm_surv_3,test_set,k=k),ndcg(re_ranked_list1,test_set,k=k),ndcg(re_ranked_list2,test_set,k=k),ndcg(re_ranked_list3,test_set,k=k),ndcg_time(re_ranked_list1,test_set,test_time,k=k),ndcg_time(re_ranked_list2,test_set,test_time,k=k),ndcg_time(re_ranked_list3,test_set,test_time,k=k)]
+                    ranking_results.append(tmp_res)
     run_results = pd.DataFrame(ranking_results)
-    run_results.columns = ['surv_model', 'k','list length','ndcg uknn','ndcg coxnet dropout','ndcg coxnet complete','ndcg coxnet both','ndcg re-rank dropout','ndcg re-rank completion','ndcg re-rank both','ndcg-time re-rank dropout','ndcg-time re-rank completion','ndcg-time re-rank both']
+    run_results.columns = ['surv_model', 'baseline_model', 'k','list length','ndcg uknn','ndcg coxnet dropout','ndcg coxnet complete','ndcg coxnet both','ndcg re-rank dropout','ndcg re-rank completion','ndcg re-rank both','ndcg-time re-rank dropout','ndcg-time re-rank completion','ndcg-time re-rank both']
     return run_results, c_index_results
 
 version = 'revision_runs'
 split_counts = [3] 
 min_completeds = [1]
-#datasets = ['Canvas','X','KDD']
-datasets = ['Canvas']
+datasets = ['Canvas','X','KDD']
 full_results = []
 c_index_results = []
 for dataset in datasets:
@@ -945,6 +945,7 @@ for dataset in datasets:
     for split_count in split_counts:
         for min_completed in min_completeds:
             if min_completed <= split_count:
+                # change to 10
                 for iteration in range(0,2):
                     print(iteration)
                     all_results = run_all_pca(dataset=dataset,split_count=split_count,min_completed=min_completed)
@@ -964,5 +965,5 @@ for dataset in datasets:
 logging.basicConfig(filename=f'trial_new{version}.txt', level=logging.INFO, format='%(message)s')
 log_print('All results')
 log_print(pd.concat(full_results))
-pd.concat(full_results).to_csv(f'nn_{version}.csv')
+pd.concat(full_results).to_csv(f'baseline_comparisons_{version}.csv')
 pd.concat(c_index_results).to_csv(f'c_index_{version}.csv')
