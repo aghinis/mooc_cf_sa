@@ -1,46 +1,115 @@
 import numpy as np
 from skopt import forest_minimize
-from baselines.knn import ItemKNNCFRecommender,UserKNNCFRecommender
 # from baselines.IALSRecommender import IALSRecommender
 # import lightfm
 from helpers.measures import ndcg
 # from helpers.utils import recom_lf, recom_knn
-from helpers.utils import recom_knn
+from helpers.utils import recom_knn,recom_librec,matrix_to_df,prep_data_librec
 
-# from PureSVDRecommender import PureSVDRecommender
-# from NeuMF_our_interface.NeuMF_RecommenderWrapper import NeuMF_RecommenderWrapper
-# from NMFRecommender import NMFRecommender
-# from baselines.EASE_R_Recommender import EASE_R_Recommender
-# from MultiVAE_our_interface.MultiVAE_RecommenderWrapper import Mult_VAE_RecommenderWrapper
-# from SLIMElasticNetRecommender import SLIMElasticNetRecommender
+from baselines.knn import ItemKNNCFRecommender,UserKNNCFRecommender
+from baselines.PureSVDRecommender import PureSVDRecommender
+from baselines.NMFRecommender import NMFRecommender
+from baselines.EASE_R_Recommender import EASE_R_Recommender
+from baselines.SLIMElasticNetRecommender import SLIMElasticNetRecommender
+from baselines.IALSRecommender import IALSRecommender
 
+from libreco.algorithms import LightGCN,NGCF
+from libreco.data import DatasetPure
 
-def objective_BPR(params, train, validation):
-    iterations, factors, u_regu, i_regu, lr = params
-    model = lightfm.LightFM(loss='bpr',
-                    learning_rate=lr,
-                    no_components=factors,
-                    user_alpha=u_regu,
-                    item_alpha=i_regu,
-                    random_state=0)
-    model.fit(train,epochs=iterations, verbose=True)
-    recoms = recom_lf(model,train)
+def objective_ngcf(params, train, validation,rid_idx, cid_idx,idx_to_rid, idx_to_cid):
+    embed, epoch,l_r ,reg_ = params
+   
+    train_df = matrix_to_df(train,idx_to_rid, idx_to_cid)
+    eval_df = matrix_to_df(validation,idx_to_rid, idx_to_cid)
+    train_df = prep_data_librec(train_df)
+    eval_df = prep_data_librec(eval_df)
+    train_data, data_info = DatasetPure.build_trainset(train_df)
+    eval_data = DatasetPure.build_trainset(eval_df)
+    
+
+    model = NGCF(
+            "ranking",
+            data_info,
+            loss_type="cross_entropy",
+            embed_size=embed,
+            n_epochs=epoch,
+            lr=l_r,
+            lr_decay=False,
+            reg=reg_,
+            batch_size=2048,
+            num_neg=1,
+            node_dropout=0.0,
+            message_dropout=0.0,
+            hidden_units=(32, 32, 32),
+            device="cuda",
+        )
+ 
+    model.fit(
+                train_data,
+                neg_sampling=True,
+                verbose=0,
+                shuffle=True,
+                eval_data=eval_data,
+                metrics=[
+                "loss",
+                "balanced_accuracy",
+                "roc_auc",
+                "pr_auc",
+                "ndcg",
+                ],
+                )    
+    
+    recoms = recom_librec(model,train_df,train,rid_idx,cid_idx)
     out = - ndcg(recoms,validation,k=10)
     if np.abs(out + 1) < 0.001 or out < -1.0:
         return 0.0
     else:
         return out
 
-def objective_WARP(params, train, validation):
-    iterations,factors, u_regu, i_regu, lr = params
-    model = lightfm.LightFM(loss='warp',
-                    learning_rate=lr,
-                    no_components=factors,
-                    user_alpha=u_regu,
-                    item_alpha=i_regu,
-                    random_state=0)
-    model.fit(train,epochs=iterations, verbose=True)
-    recoms = recom_lf(model,train)
+
+def objective_lightgcn(params, train, validation,rid_idx, cid_idx,idx_to_rid, idx_to_cid):
+    embed, epoch,l_r ,reg_ ,n_layer = params
+   
+    train_df = matrix_to_df(train,idx_to_rid, idx_to_cid)
+    eval_df = matrix_to_df(validation,idx_to_rid, idx_to_cid)
+    train_df = prep_data_librec(train_df)
+    eval_df = prep_data_librec(eval_df)
+    train_data, data_info = DatasetPure.build_trainset(train_df)
+    eval_data = DatasetPure.build_trainset(eval_df)
+    
+
+    model = LightGCN(
+                    "ranking",
+                    data_info,
+                    loss_type="bpr",
+                    embed_size=embed,
+                    n_epochs=epoch,
+                    lr=l_r,
+                    lr_decay=False,
+                    reg=reg_,
+                    batch_size=2048,
+                    num_neg=1,
+                    dropout_rate=0.0,
+                    n_layers=n_layer,
+                    device="cuda",
+                    )
+ 
+    model.fit(
+                train_data,
+                neg_sampling=True,
+                verbose=0,
+                shuffle=True,
+                eval_data=eval_data,
+                metrics=[
+                "loss",
+                "balanced_accuracy",
+                "roc_auc",
+                "pr_auc",
+                "ndcg",
+                ],
+                )    
+    
+    recoms = recom_librec(model,train_df,train,rid_idx,cid_idx)
     out = - ndcg(recoms,validation,k=10)
     if np.abs(out + 1) < 0.001 or out < -1.0:
         return 0.0
@@ -79,17 +148,7 @@ def objective_UKNN(params, train, validation):
         return 0.0
     else:
         return out
-def objective_MVAE(params, train, validation):
-    iterations,b_size,aneal = params
-    model = Mult_VAE_RecommenderWrapper(train)
-    # for i in range(len(p_dim)):
-    #     p_dim[i].append(model.n_items)
-    model.fit(epochs=iterations,batch_size=b_size,total_anneal_steps=aneal)
-    out = - ndcg_knn (train,validation,model,k=10)
-    if np.abs(out + 1) < 0.001 or out < -1.0:
-        return 0.0
-    else:
-        return out
+
 
 def objective_EASE(params,train, validation):
     factor,l2 = params
@@ -97,6 +156,36 @@ def objective_EASE(params,train, validation):
     model.fit(topK =factor,  l2_norm = l2)
     recoms = recom_knn(model,train)
     out = - ndcg(recoms,validation,k=10)
+    if np.abs(out + 1) < 0.001 or out < -1.0:
+        return 0.0
+    else:
+        return out
+
+def objective_SVD(params,train, validation):
+    factor,l2 = params
+    model = PureSVDRecommender(train)
+    model.fit(num_factors=factor)
+    out = - ndcg(train,validation,model,k=10)
+    if np.abs(out + 1) < 0.001 or out < -1.0:
+        return 0.0
+    else:
+        return out
+
+def objective_NMF(params,train, validation):
+    factor,l2 = params
+    model = NMFRecommender(train)
+    model.fit(num_factors=factor,l1_ratio = l2)
+    out = - ndcg(train,validation,model,k=10)
+    if np.abs(out + 1) < 0.001 or out < -1.0:
+        return 0.0
+    else:
+        return out
+
+def objective_SLIM(params,train, validation):
+    topK,l1_ratio,alpha = params
+    model = SLIMElasticNetRecommender(train)
+    model.fit(topK = topK, l1_ratio = l1_ratio, alpha =alpha)
+    out = - ndcg(train,validation,model,k=10)
     if np.abs(out + 1) < 0.001 or out < -1.0:
         return 0.0
     else:

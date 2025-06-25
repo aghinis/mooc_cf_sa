@@ -5,6 +5,36 @@ from sklearn.model_selection import GridSearchCV
 # from skopt import BayesSearchCV
 from sklearn.preprocessing import MinMaxScaler
 
+def librec_att_setter(model,p_dict):
+    for i,v in p_dict.items():
+        model.__setattr__(i,v)
+
+def prep_data_librec(df):
+    df.completed = 1
+    df.rename(columns={'username':'user','course_id':'item','completed':'label'},inplace=True)
+    return df
+
+def transform_dict(original_dict,train, key_map, value_map):
+    transformed_dict = {}
+    for key, value_list in original_dict.items():
+        # Map the key using key_map, or keep the original if not found
+        new_key = key_map.get(key)
+        training_inter = train[new_key].nonzero()[1]
+        # Map each value in the list using value_map, or keep the original if not found
+        new_values = [value_map.get(val) for val in value_list]
+        new_values_no_train = [x for x in new_values if x not in training_inter]
+        transformed_dict[new_key] = new_values_no_train
+        sorted_dict = dict(sorted(transformed_dict.items()))
+    return sorted_dict
+
+
+def recom_librec(model, train_df,train,rid_idx, cid_idx):
+    users = train_df.user.unique()
+    n_items = len(train_df.item.unique())
+    recoms_dict = model.recommend_user(user = users,n_rec=n_items)
+    recomms = list(transform_dict(recoms_dict,train,rid_idx,cid_idx).values())
+    return recomms
+
 def re_ranker(first_lists,second_lists,first_k,second_k):
 
     initial_lists = [i[:first_k] for i in first_lists]
@@ -135,6 +165,8 @@ def train_test(interactions, split_count, fraction=None):
     train = train.tolil()
 
     for user in user_index:
+        if train.getrow(user).count_nonzero()<2:
+            continue
         test_interactions = np.random.choice(interactions.getrow(user).indices,
                                         size=split_count,
                                         replace=False)
@@ -143,6 +175,7 @@ def train_test(interactions, split_count, fraction=None):
 
     assert(train.multiply(test).nnz == 0)
     return train.tocsr(), test.tocsr(), user_index
+
 
 def get_df_matrix_mappings(df, row_name, col_name):
     """
