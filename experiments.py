@@ -23,7 +23,7 @@ from sklearn.metrics import make_scorer
 from baselines.knn import ItemKNNCFRecommender,UserKNNCFRecommender
 
 from helpers.measures import ndcg, ndcg_time
-from helpers.utils import train_test_sp, train_test, df_to_mat ,threshold_interactions_df_mooc, matrix_to_df, recom_knn, re_ranker
+from helpers.utils import train_test_sp, train_test, df_to_mat ,threshold_interactions_df_mooc, matrix_to_df, recom_knn, re_ranker,prep_data_librec,recom_librec,librec_att_setter
 import helpers.tunning_param as tp
 from sklearn.decomposition import PCA
 from sklearn.compose import ColumnTransformer
@@ -42,6 +42,9 @@ from baselines.SLIMElasticNetRecommender import SLIMElasticNetRecommender
 from baselines.EASE_R_Recommender import EASE_R_Recommender
 from baselines.PureSVDRecommender import PureSVDRecommender
 from baselines.NMFRecommender import NMFRecommender
+
+from libreco.algorithms import LightGCN , NGCF
+from libreco.data import DatasetPure
 
 
 
@@ -674,6 +677,13 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True, tune
     interactions,rid_to_idx, idx_to_rid, cid_to_idx, idx_to_cid = df_to_mat(data,"username","course_id","completed")
     train_set,test_set,users_set = train_test_sp(interactions,split_count=split_count,min_completed=min_completed)
 
+    train_df = matrix_to_df(train_set,idx_to_rid, idx_to_cid)
+    test_df = matrix_to_df(test_set,idx_to_rid, idx_to_cid)
+    train_df_librs = prep_data_librec(train_df)
+    test_df_librs = prep_data_librec(test_df)
+    train_data, data_info = DatasetPure.build_trainset(train_df_librs)
+    test_data = DatasetPure.build_testset(test_df_librs)
+
     # get time matrix for ndcg_time
     test_time = test_set.copy()
     for row, col in zip(*test_set.nonzero()):
@@ -779,6 +789,7 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True, tune
     y_test_completion = [(True,t[0]) if t[1]==2 else (False,t[0]) for t in y_train.values]
     y_test_completion = np.array(y_test_completion, dtype=[('Status', '?'), ('Survival_in_days', '<f8')])
     ranking_results = list()
+
     surv_models = ['Coxnet','rsf','XGb']
     for surv_model in surv_models: 
         log_print(f'Starting {surv_model}')
@@ -873,41 +884,73 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True, tune
         ##### PART 1 - Train, Tune and test RSs #######
         ######################################
         scores = {
-                    # "BPR":{"ndcg":[],"MAP":[],"recall":[],"precision":[],"h_param":['epochs','no_components','learning_rate','item_alpha','user_alpha'],"h_param_range":[(50, 350),(10,300),(10**-5, 10**-1, 'log-uniform'),(10**-7, 10**-1, 'log-uniform'),(10**-6, 10**-1, 'log-uniform')],'best_param':[336, 207, 5.596974933016647e-05, 0.0005605913885321211, 0.07893887705085302]},
-                # "WARP":{"ndcg":[],"MAP":[],"recall":[],"precision":[],"h_param":['epochs','no_components','learning_rate','item_alpha','user_alpha'],"h_param_range":[(50, 350),(10,300),(10**-5, 10**-1, 'log-uniform'),(10**-7, 10**-1, 'log-uniform'),(10**-6, 10**-1, 'log-uniform')],'best_param':[268, 226, 7.01854105327644e-05, 0.006705265022562404, 0.01602820393938058]},
-                # "MVAE":{"ndcg":[],"h_param":['epochs','batch_size','total_anneal_steps'],"h_param_range":[(10,250),(25,500),(100000,300000)],'best_param':[99, 391, 127354]},
-                "EASE":{"ndcg":[],"h_param":['topK', 'l2_norm'],"h_param_range":[[None],(1e0, 1e7)],'best_param':{"X":[None, 95109.6942962282],"Canvas":[None, 9325573.660829231],"KDD":[None, 2540.6584595004156]}},
-                "UKNN":{"ndcg":[],"h_param":['topK', 'shrink'],"h_param_range":[(20, 800),(0,1000)],'best_param':{"X":[301, 178],"Canvas":[128, 8],"KDD":[488, 907]}},
-                "IKNN":{"ndcg":[],"h_param":['topK', 'shrink'],"h_param_range":[(20, 800),(0,1000)],'best_param':{"X":[70, 350],"Canvas":[789, 793],"KDD":[37, 194]}},
-                "SVD":{"ndcg":[],"h_param":['num_factors','random_seed'],"h_param_range":[(3, 300),[int(random_seed)]],'best_param':{"X":[5, 1],"Canvas":[8, 1],"KDD":[3, 1]}},
-                "NMF":{"ndcg":[],"h_param":['num_factors','l1_ratio'],"h_param_range":[(10, 300),(0.1,0.9)],'best_param':{"X":[202, 0.21397251366409453],"Canvas":[242, 0.2322551413506923],"KDD":[43, 0.8460852461396278]}},
-                "SLIM":{"ndcg":[],"h_param":['topK', 'l1_ratio','alpha'],"h_param_range":[(5, 600),(1e-5,1.0),(1e-3, 1.0)],'best_param': {"X":[380, 0.00023022491889188525, 0.31065433709916135],"Canvas":[486, 0.5934988381321606, 0.00590093297649861],"KDD":[321, 0.03911733924386367, 0.17916129385389876]}},
-                "IALS":{"ndcg":[],"h_param":['epochs','num_factors','reg'],"h_param_range":[(10, 200),(10,100),(1e-5, 1e-1)],'best_param':{"X":[217, 21, 0.007524980451609259],"Canvas":[43, 10, 0.09313943701763346],"KDD":[200, 45, 0.09769923007182914]}},
+                "EASE":{"h_param":['topK', 'l2_norm'],"h_param_range":[[None],(1e0, 1e7)],'best_param':{"X":[None, 95109.6942962282],"Canvas":[None, 9325573.660829231],"KDD":[None, 2540.6584595004156]}},
+                "UKNN":{"h_param":['topK', 'shrink'],"h_param_range":[(20, 800),(0,1000)],'best_param':{"X":[301, 178],"Canvas":[128, 8],"KDD":[488, 907]}},
+                "IKNN":{"h_param":['topK', 'shrink'],"h_param_range":[(20, 800),(0,1000)],'best_param':{"X":[70, 350],"Canvas":[789, 793],"KDD":[37, 194]}},
+                "SVD":{"h_param":['num_factors','random_seed'],"h_param_range":[(3, 300),[int(random_seed)]],'best_param':{"X":[5, 1],"Canvas":[8, 1],"KDD":[3, 1]}},
+                "NMF":{"h_param":['num_factors','l1_ratio'],"h_param_range":[(10, 300),(0.1,0.9)],'best_param':{"X":[202, 0.21397251366409453],"Canvas":[242, 0.2322551413506923],"KDD":[43, 0.8460852461396278]}},
+                "SLIM":{"h_param":['topK', 'l1_ratio','alpha'],"h_param_range":[(5, 600),(1e-5,1.0),(1e-3, 1.0)],'best_param': {"X":[380, 0.00023022491889188525, 0.31065433709916135],"Canvas":[486, 0.5934988381321606, 0.00590093297649861],"KDD":[321, 0.03911733924386367, 0.17916129385389876]}},
+                "IALS":{"h_param":['epochs','num_factors','reg'],"h_param_range":[(10, 200),(10,100),(1e-5, 1e-1)],'best_param':{"X":[217, 21, 0.007524980451609259],"Canvas":[43, 10, 0.09313943701763346],"KDD":[200, 45, 0.09769923007182914]}},
+                "lightGCN": {"h_param":['embed_size','n_epochs','lr','reg','n_layers','num_neg'],"h_param_range":[(10, 300),(10,500),(0.00001,0.01),(1e-05,1e-02),(1,6),(1,3)],'best_param':{"X":[113, 372,0.0046094732646884875, 2.8351788481562777e-05,2,3],"Canvas": [457, 120, 0.005519288731474034, 0.095755392613816, 5,3],"KDD":[157, 185, 0.009981903045609171, 0.0001669309730659627, 2,1]}},
+                "NGCF": {"h_param":['embed_size','n_epochs','lr','reg','num_neg'],"h_param_range":[(10, 300),(10,500),(0.00001,0.01),(1e-05,1e-02),(1,4)],'best_param':{"X":[253, 81, 0.0006240746945331817, 5.093445504725661e-05,1],"Canvas":[259, 345, 0.009088789833155647, 0.003418260089053818, 3],"KDD":[393, 215, 0.0003066394448286105, 0.007256399016023182,3]}}
                     }
 
+        
+        # validation set for tunning RSs
+        train_2_set ,validation_set,_ = train_test(train_set,split_count=1)
+        eval_df = matrix_to_df(validation_set,idx_to_rid, idx_to_cid)
+        eval_df_librs = prep_data_librec(eval_df)
+        eval_data = DatasetPure.build_evalset(eval_df_librs)
+        
         print("trainging and testing  RSs")
-        for baseline in ["EASE","UKNN","IKNN",'SVD','NMF','SLIM', 'IALS']: 
-            print(baseline)
+        for baseline in ["EASE","UKNN","IKNN",'SVD','SLIM', 'IALS','lightGCN','NGCF',"NMF"]: 
             train_rs = train_set.copy()
             best_CF_model = baseline
             if baseline == 'UKNN':
                 cf_model = UserKNNCFRecommender(train_rs)
+                obj = partial(tp.objective_UKNN, train=train_2_set, validation=validation_set)
             elif baseline == 'IKNN':
                 cf_model = ItemKNNCFRecommender(train_rs)
+                obj = partial(tp.objective_IKNN, train=train_2_set, validation=validation_set)
             elif baseline == 'IALS':
                 cf_model = IALSRecommender(train_rs)
+                obj = partial(tp.objective_IALS, train=train_2_set, validation=validation_set)
             elif baseline == 'SLIM':
                 cf_model = SLIMElasticNetRecommender(train_rs)
+                obj = partial(tp.objective_SLIM, train=train_2_set, validation=validation_set)
             elif baseline == 'EASE':
                 cf_model = EASE_R_Recommender(train_rs)
+                obj = partial(tp.objective_EASE, train=train_2_set, validation=validation_set)                
             elif baseline == 'NMF':
                 cf_model = NMFRecommender(train_rs)
+                obj = partial(tp.objective_NMF, train=train_2_set, validation=validation_set)
             elif baseline == 'SVD':
-                cf_model = PureSVDRecommender(train_rs)            
-            best_param_list = scores[best_CF_model]['best_param'][dataset]
-            best_param = dict(zip(scores[best_CF_model]["h_param"], best_param_list))
-            cf_model.fit(**best_param)
-            recom = recom_knn(cf_model,train_rs)
+                cf_model = PureSVDRecommender(train_rs)   
+                obj = partial(tp.objective_SVD, train=train_2_set, validation=validation_set)  
+            elif baseline == 'lightGCN':
+                cf_model = LightGCN("ranking",data_info)   
+                obj = partial(tp.objective_lightgcn, train=train_2_set, validation=validation_set,rid_idx=rid_to_idx, cid_idx=cid_to_idx,idx_to_rid=idx_to_rid, idx_to_cid=idx_to_cid)  
+            elif baseline == 'NGCF': 
+                cf_model = NGCF("ranking",data_info)
+                obj = partial(tp.objective_ngcf, train=train_2_set, validation=validation_set,rid_idx=rid_to_idx, cid_idx=cid_to_idx,idx_to_rid=idx_to_rid, idx_to_cid=idx_to_cid)  
+           
+            if tune_models:    
+                print("Start Tunning"+": "+baseline)
+                results = tp.tune(obj,scores[baseline]['h_param_range'],n_calls=len(scores[baseline]['h_param_range'])*10,njobs = -1,random_seed=random_seed)
+                best_param_list = results['x']
+                scores[baseline]['best_param'][dataset] = best_param_list
+                print("End Tunning"+": "+baseline+"+++++ ",best_param_list)
+
+            best_param_list = scores[baseline]['best_param'][dataset]
+            best_param = dict(zip(scores[baseline]["h_param"], best_param_list))
+
+            if baseline in ['lightGCN','NGCF']:
+                librec_att_setter(cf_model,best_param)
+                cf_model.fit(train_data,neg_sampling=True,verbose=0,shuffle=True,eval_data=eval_data,metrics=["loss","ndcg"])
+                recom = recom_librec(cf_model,train_df_librs,train_set,rid_to_idx,cid_to_idx)
+            else:
+                cf_model.fit(**best_param)
+                recom = recom_knn(cf_model,train_rs)
             l_list = [5,8,10]
             k_list = [3,5]
             log_print('Performance RE-RANKING')
@@ -937,7 +980,7 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True, tune
 version = 'revision_runs'
 split_counts = [3] 
 min_completeds = [1]
-datasets = ['Canvas','X','KDD']
+datasets = ['KDD','X','Canvas']
 full_results = []
 c_index_results = []
 for dataset in datasets:
