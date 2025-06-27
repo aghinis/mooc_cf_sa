@@ -988,8 +988,7 @@ for dataset in datasets:
     for split_count in split_counts:
         for min_completed in min_completeds:
             if min_completed <= split_count:
-                # change to 10
-                for iteration in range(0,2):
+                for iteration in range(0,10):
                     print(iteration)
                     all_results = run_all_pca(dataset=dataset,split_count=split_count,min_completed=min_completed)
                     run_results = all_results[0]
