@@ -24,7 +24,7 @@ The experiments can be reproduced using the `run_all_pca` function in `experimen
   Should time be normalized between 0 and 1 within each course
 
 - **`tune_models`** *(optional, default=False)* 
-  Should the time-to-event and baseline recommender models be re-tuned. If true, the survival models are tuned using Bayesian hyperparameter optimization using the `hyperopt` package while the baseline recommender are tuned using the `skopt` package.
+  Should the time-to-event and baseline recommender models be re-tuned. If false, the values reported in the appendix of the table will be used for each dataset and method. If true, the survival models will be re-tuned using Bayesian hyperparameter optimization using the `hyperopt` package while the baseline recommender are tuned using the `skopt` package.
 
 ## Repository structure
 
