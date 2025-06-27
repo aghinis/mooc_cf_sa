@@ -39,6 +39,7 @@ mocc_cf_sa/
 ├── experiments.py          # main python file to reproduce experiments
 ├── kddcup_preprocessed.csv # processed kddcup dataset for experiments
 ├── xuentengx_preprocessed  # processed xuentengx dataset for experiments
+├── requirements.txt        # package versions
 ```
 
 
