@@ -971,10 +971,10 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True, tune
                     log_print(f"{baseline} ndcg-time of re-ranking (base = recom and {surv_model} on completion): ",    ndcg_time(re_ranked_list2,test_set,test_time,k=k))
                     log_print(f"{baseline} ndcg-time of re-ranking (base = recom and {surv_model} on both): ",    ndcg_time(re_ranked_list3,test_set,test_time,k=k))
 
-                    tmp_res =  [surv_model,baseline,k,i,ndcg(recom,test_set,k=k),ndcg(recomm_surv_1,test_set,k=k),ndcg(recomm_surv_2,test_set,k=k),ndcg(recomm_surv_3,test_set,k=k),ndcg(re_ranked_list1,test_set,k=k),ndcg(re_ranked_list2,test_set,k=k),ndcg(re_ranked_list3,test_set,k=k),ndcg_time(re_ranked_list1,test_set,test_time,k=k),ndcg_time(re_ranked_list2,test_set,test_time,k=k),ndcg_time(re_ranked_list3,test_set,test_time,k=k)]
+                    tmp_res =  [surv_model,baseline,k,i,ndcg(recom,test_set,k=k),ndcg(recomm_surv_1,test_set,k=k),ndcg(recomm_surv_2,test_set,k=k),ndcg(recomm_surv_3,test_set,k=k),ndcg(re_ranked_list1,test_set,k=k),ndcg(re_ranked_list2,test_set,k=k),ndcg(re_ranked_list3,test_set,k=k),ndcg_time(recom,test_set,k=k),ndcg_time(re_ranked_list1,test_set,test_time,k=k),ndcg_time(re_ranked_list2,test_set,test_time,k=k),ndcg_time(re_ranked_list3,test_set,test_time,k=k)]
                     ranking_results.append(tmp_res)
     run_results = pd.DataFrame(ranking_results)
-    run_results.columns = ['surv_model', 'baseline_model', 'k','list length','ndcg uknn','ndcg coxnet dropout','ndcg coxnet complete','ndcg coxnet both','ndcg re-rank dropout','ndcg re-rank completion','ndcg re-rank both','ndcg-time re-rank dropout','ndcg-time re-rank completion','ndcg-time re-rank both']
+    run_results.columns = ['surv_model', 'baseline_model', 'k','list length','ndcg baseline','ndcg survival dropout','ndcg survival complete','ndcg survival both','ndcg re-rank dropout','ndcg re-rank completion','ndcg re-rank both','ndcg-time baseline','ndcg-time re-rank dropout','ndcg-time re-rank completion','ndcg-time re-rank both']
     return run_results, c_index_results
 
 version = 'revision_runs'
@@ -1006,7 +1006,5 @@ for dataset in datasets:
                     c_index_run['iteration'] = iteration
                     c_index_results.append(c_index_run)
 logging.basicConfig(filename=f'trial_new{version}.txt', level=logging.INFO, format='%(message)s')
-log_print('All results')
-log_print(pd.concat(full_results))
 pd.concat(full_results).to_csv(f'baseline_comparisons_{version}.csv')
 pd.concat(c_index_results).to_csv(f'c_index_{version}.csv')
