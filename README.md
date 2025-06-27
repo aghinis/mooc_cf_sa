@@ -7,7 +7,7 @@ This repository contains the code to reproduce the experiments for Enhancing Col
 
 ## Reproducability
 
-The experiments can be reproduced using the `run_all_pca` function in `experiments.py`. This function will perform tuning for each survival model on both completion and dropout as the target. 
+The experiments can be reproduced using the `run_all_pca` function in `experiments.py`. This function will perform tuning for each survival model on both completion and dropout as the target. The `requirements.txt` file contains the package dependencies for these experiments.
 
 #### Parameters:
 
