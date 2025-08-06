@@ -887,11 +887,11 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True, tune
         # for i in range(len(recomm_surv_2)):
         #     recomm_surv_3.append(rank_sum_sort(recomm_surv_1[i],recomm_surv_2[i]))
 
-        recomm_surv_0.2 = rank_sum_sort_w(recomm_surv_1,recomm_surv_2,W=0.2)
-        recomm_surv_0.4 = rank_sum_sort_w(recomm_surv_1,recomm_surv_2,W=0.4)
-        recomm_surv_0.5 = rank_sum_sort_w(recomm_surv_1,recomm_surv_2,W=0.5)
-        recomm_surv_0.6 = rank_sum_sort_w(recomm_surv_1,recomm_surv_2,W=0.6)
-        recomm_surv_0.8 = rank_sum_sort_w(recomm_surv_1,recomm_surv_2,W=0.8)
+        recomm_surv_0_2 = rank_sum_sort_w(recomm_surv_1,recomm_surv_2,W=0.2)
+        recomm_surv_0_4 = rank_sum_sort_w(recomm_surv_1,recomm_surv_2,W=0.4)
+        recomm_surv_0_5 = rank_sum_sort_w(recomm_surv_1,recomm_surv_2,W=0.5)
+        recomm_surv_0_6 = rank_sum_sort_w(recomm_surv_1,recomm_surv_2,W=0.6)
+        recomm_surv_0_8 = rank_sum_sort_w(recomm_surv_1,recomm_surv_2,W=0.8)
 
         
         print("ndcg with Dropout: ",ndcg(recomm_surv_1,test_set,k=3))
@@ -927,7 +927,7 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True, tune
         eval_data = DatasetPure.build_evalset(eval_df_librs)
         
         print("trainging and testing  RSs")
-        for baseline in ["EASE","UKNN","IKNN",'SVD','SLIM', 'IALS','lightGCN','NGCF',"NMF"]: 
+        for baseline in ["EASE"]#,"UKNN","IKNN",'SVD','SLIM', 'IALS','lightGCN','NGCF',"NMF"]: 
             train_rs = train_set.copy()
             best_CF_model = baseline
             if baseline == 'UKNN':
