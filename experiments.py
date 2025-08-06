@@ -563,8 +563,8 @@ def tune_boosted(dataset,X,y,event, tune=False):
         result['n_jobs'] = 10
         result['subsample'] = 0.5
         model = GradientBoostingSurvivalAnalysis(**result).fit(X,y)
-    with open(fname,'wb') as file:
-        pickle.dump(model,file)
+    # with open(fname,'wb') as file:
+    #     pickle.dump(model,file)
     return model
 
 
@@ -803,7 +803,8 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True, tune
     y_test_completion = np.array(y_test_completion, dtype=[('Status', '?'), ('Survival_in_days', '<f8')])
     ranking_results = list()
 
-    surv_models = ['Coxnet','rsf','XGb']
+    #surv_models = ['Coxnet','rsf','XGb']
+    surv_models = ['XGb']
     for surv_model in surv_models: 
         log_print(f'Starting {surv_model}')
         if surv_model == 'Coxnet': 
@@ -896,11 +897,11 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True, tune
         
         print("ndcg with Dropout: ",ndcg(recomm_surv_1,test_set,k=3))
         print("ndcg with Completion: ",ndcg(recomm_surv_2,test_set,k=3))
-        print("ndcg with both 0.2: ",ndcg(recomm_surv_0.2,test_set,k=3))
-        print("ndcg with both 0.4: ",ndcg(recomm_surv_0.4,test_set,k=3))
-        print("ndcg with both 0.5: ",ndcg(recomm_surv_0.5,test_set,k=3))        
-        print("ndcg with both 0.6: ",ndcg(recomm_surv_0.6,test_set,k=3))
-        print("ndcg with both 0.8: ",ndcg(recomm_surv_0.8,test_set,k=3))        
+        print("ndcg with both 0.2: ",ndcg(recomm_surv_0_2,test_set,k=3))
+        print("ndcg with both 0.4: ",ndcg(recomm_surv_0_4,test_set,k=3))
+        print("ndcg with both 0.5: ",ndcg(recomm_surv_0_5,test_set,k=3))        
+        print("ndcg with both 0.6: ",ndcg(recomm_surv_0_6,test_set,k=3))
+        print("ndcg with both 0.8: ",ndcg(recomm_surv_0_8,test_set,k=3))        
         
         print("unlabeled for 0 ",len(new_unl_df_names.loc[new_unl_df_names['username']==0]))
 
@@ -927,7 +928,7 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True, tune
         eval_data = DatasetPure.build_evalset(eval_df_librs)
         
         print("trainging and testing  RSs")
-        for baseline in ["EASE"]#,"UKNN","IKNN",'SVD','SLIM', 'IALS','lightGCN','NGCF',"NMF"]: 
+        for baseline in ["EASE","UKNN"]:# ,"IKNN",'SVD','SLIM', 'IALS','lightGCN','NGCF',"NMF"]: 
             train_rs = train_set.copy()
             best_CF_model = baseline
             if baseline == 'UKNN':
@@ -984,27 +985,103 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True, tune
                     log_print(f"{baseline}: ndcg of ",best_CF_model," ",ndcg(recom,test_set,k=k))
                     log_print("ndcg of ",f'{surv_model} on dropout'," ",ndcg(recomm_surv_1,test_set,k=k))
                     log_print("ndcg of ",f'{surv_model} on completion'," ",ndcg(recomm_surv_2,test_set,k=k))
-                    log_print(" ndcg of ",f'{surv_model} on both'," ",ndcg(recomm_surv_3,test_set,k=k))
+                    log_print(" ndcg of ",f'{surv_model} on both'," ",ndcg(recomm_surv_0_2,test_set,k=k))
                     re_ranked_list1 = re_ranker(recom,recomm_surv_1,i,k)
                     re_ranked_list2 = re_ranker(recom,recomm_surv_2,i,k)
-                    re_ranked_list3 = re_ranker(recom,recomm_surv_3,i,k)
+                    re_ranked_list_0_2 = re_ranker(recom,recomm_surv_0_2,i,k)
+                    re_ranked_list_0_4 = re_ranker(recom,recomm_surv_0_4,i,k)
+                    re_ranked_list_0_5 = re_ranker(recom,recomm_surv_0_5,i,k)
+                    re_ranked_list_0_6 = re_ranker(recom,recomm_surv_0_6,i,k)
+                    re_ranked_list_0_8 = re_ranker(recom,recomm_surv_0_8,i,k)
+
                     log_print(f"{baseline} ndcg of re-ranking (base = recom and {surv_model} on dropout): ",    ndcg(re_ranked_list1,test_set,k=k))
                     log_print(f"{baseline} ndcg of re-ranking (base = recom and {surv_model} on completion): ",    ndcg(re_ranked_list2,test_set,k=k))
-                    log_print(f"{baseline} ndcg of re-ranking (base = recom and {surv_model} on both): ",    ndcg(re_ranked_list3,test_set,k=k))
+                    log_print(f"{baseline} ndcg of re-ranking (base = recom and {surv_model} on both w=0.2): ",    ndcg(re_ranked_list_0_2,test_set,k=k))
+                    log_print(f"{baseline} ndcg of re-ranking (base = recom and {surv_model} on both w=0.4): ",    ndcg(re_ranked_list_0_4,test_set,k=k))
+                    log_print(f"{baseline} ndcg of re-ranking (base = recom and {surv_model} on both w=0.5): ",    ndcg(re_ranked_list_0_5,test_set,k=k))
+                    log_print(f"{baseline} ndcg of re-ranking (base = recom and {surv_model} on both w=0.6): ",    ndcg(re_ranked_list_0_6,test_set,k=k))
+                    log_print(f"{baseline} ndcg of re-ranking (base = recom and {surv_model} on both w=0.8): ",    ndcg(re_ranked_list_0_8,test_set,k=k))
+
                     log_print(f"{baseline} ndcg-time of re-ranking (base = recom and {surv_model} on dropout): ",    ndcg_time(re_ranked_list1,test_set,test_time,k=k))
                     log_print(f"{baseline} ndcg-time of re-ranking (base = recom and {surv_model} on completion): ",    ndcg_time(re_ranked_list2,test_set,test_time,k=k))
-                    log_print(f"{baseline} ndcg-time of re-ranking (base = recom and {surv_model} on both): ",    ndcg_time(re_ranked_list3,test_set,test_time,k=k))
+                    log_print(f"{baseline} ndcg-time of re-ranking (base = recom and {surv_model} on both w=0.2): ",    ndcg_time(re_ranked_list_0_2,test_set,test_time,k=k))
+                    log_print(f"{baseline} ndcg-time of re-ranking (base = recom and {surv_model} on both w=0.4): ",    ndcg_time(re_ranked_list_0_4,test_set,test_time,k=k))
+                    log_print(f"{baseline} ndcg-time of re-ranking (base = recom and {surv_model} on both w=0.5): ",    ndcg_time(re_ranked_list_0_5,test_set,test_time,k=k))
+                    log_print(f"{baseline} ndcg-time of re-ranking (base = recom and {surv_model} on both w=0.6): ",    ndcg_time(re_ranked_list_0_6,test_set,test_time,k=k))
+                    log_print(f"{baseline} ndcg-time of re-ranking (base = recom and {surv_model} on both w=0.8): ",    ndcg_time(re_ranked_list_0_8,test_set,test_time,k=k))
 
-                    tmp_res =  [surv_model,baseline,k,i,ndcg(recom,test_set,k=k),ndcg(recomm_surv_1,test_set,k=k),ndcg(recomm_surv_2,test_set,k=k),ndcg(recomm_surv_3,test_set,k=k),ndcg(re_ranked_list1,test_set,k=k),ndcg(re_ranked_list2,test_set,k=k),ndcg(re_ranked_list3,test_set,k=k),ndcg_time(recom,test_set,k=k),ndcg_time(re_ranked_list1,test_set,test_time,k=k),ndcg_time(re_ranked_list2,test_set,test_time,k=k),ndcg_time(re_ranked_list3,test_set,test_time,k=k)]
+                    tmp_res =  [surv_model,
+                                baseline,
+                                k,
+                                i,
+                                # raw ndcg
+                                ndcg(recom,test_set,k=k),
+                                ndcg(recomm_surv_1,test_set,k=k),
+                                ndcg(recomm_surv_2,test_set,k=k),
+                                ndcg(recomm_surv_0_2,test_set,k=k),
+                                ndcg(recomm_surv_0_4,test_set,k=k),
+                                ndcg(recomm_surv_0_5,test_set,k=k),
+                                ndcg(recomm_surv_0_6,test_set,k=k),
+                                ndcg(recomm_surv_0_8,test_set,k=k),
+                                # re-ranked ndcg
+                                ndcg(re_ranked_list1,test_set,k=k),
+                                ndcg(re_ranked_list2,test_set,k=k),
+                                ndcg(re_ranked_list_0_2,test_set,k=k),
+                                ndcg(re_ranked_list_0_4,test_set,k=k),
+                                ndcg(re_ranked_list_0_5,test_set,k=k),
+                                ndcg(re_ranked_list_0_6,test_set,k=k),
+                                ndcg(re_ranked_list_0_8,test_set,k=k),
+                                # ndcg-time
+                                ndcg_time(recom,test_set,test_time,k=k),
+                                ndcg_time(re_ranked_list1,test_set,test_time,k=k),
+                                ndcg_time(re_ranked_list2,test_set,test_time,k=k),
+                                ndcg_time(re_ranked_list_0_2,test_set,test_time,k=k),
+                                ndcg_time(re_ranked_list_0_4,test_set,test_time,k=k),
+                                ndcg_time(re_ranked_list_0_5,test_set,test_time,k=k),
+                                ndcg_time(re_ranked_list_0_6,test_set,test_time,k=k),
+                                ndcg_time(re_ranked_list_0_8,test_set,test_time,k=k)]
+                                # recomm_surv_0_2
+                                # recomm_surv_0_4
+                                # recomm_surv_0_5
+                                # recomm_surv_0_6
+                                # recomm_surv_0_8
                     ranking_results.append(tmp_res)
     run_results = pd.DataFrame(ranking_results)
-    run_results.columns = ['surv_model', 'baseline_model', 'k','list length','ndcg baseline','ndcg survival dropout','ndcg survival complete','ndcg survival both','ndcg re-rank dropout','ndcg re-rank completion','ndcg re-rank both','ndcg-time baseline','ndcg-time re-rank dropout','ndcg-time re-rank completion','ndcg-time re-rank both']
+    run_results.columns = ['surv_model', 
+                            'baseline_model', 
+                            'k',
+                            'list length',
+                            'ndcg baseline',
+                            'ndcg survival dropout',
+                            'ndcg survival complete',
+                            'ndcg survival w=0.2',
+                            'ndcg survival w=0.4',
+                            'ndcg survival w=0.5',
+                            'ndcg survival w=0.6',
+                            'ndcg survival w=0.8',
+                            'ndcg re-rank dropout',
+                            'ndcg re-rank completion',
+                            'ndcg re-rank both w=0.2',
+                            'ndcg re-rank both w=0.4',
+                            'ndcg re-rank both w=0.5',
+                            'ndcg re-rank both w=0.6',
+                            'ndcg re-rank both w=0.8',
+                            'ndcg-time baseline',
+                            'ndcg-time re-rank dropout',
+                            'ndcg-time re-rank completion',
+                            'ndcg-time re-rank both w=0.2',
+                            'ndcg-time re-rank both w=0.4',
+                            'ndcg-time re-rank both w=0.5',
+                            'ndcg-time re-rank both w=0.6',
+                            'ndcg-time re-rank both w=0.8',
+                            ]
     return run_results, c_index_results
 
-version = 'revision_runs'
+version = 'test_code_update'
 split_counts = [3] 
 min_completeds = [1]
-datasets = ['KDD','X','Canvas']
+#datasets = ['KDD','X',
+datasets = ['Canvas']
 full_results = []
 c_index_results = []
 for dataset in datasets:
@@ -1012,7 +1089,7 @@ for dataset in datasets:
     for split_count in split_counts:
         for min_completed in min_completeds:
             if min_completed <= split_count:
-                for iteration in range(0,10):
+                for iteration in range(0,1):
                     print(iteration)
                     all_results = run_all_pca(dataset=dataset,split_count=split_count,min_completed=min_completed)
                     run_results = all_results[0]
