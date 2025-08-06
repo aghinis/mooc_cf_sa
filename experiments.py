@@ -95,6 +95,19 @@ def rank_sum_sort(list_1, list_2):
 
     return sorted_elements
 
+def rank_sum_sort_w(list_1, list_2,W=0.5):
+    # Create a dictionary to store the sum of ranks for each element
+    aggregated_list = []
+    for i in range(len(list_1)):
+        rank_sum = {}
+        for element in list_1[i]:
+            # Find the index (rank) of the element in both lists and sum them
+            rank_sum[element] = list_1[i].index(element)*(W) + list_2[i].index(element)*(1-W)
+        # Sort the elements based on the sum of ranks
+        sorted_elements = sorted(rank_sum, key=rank_sum.get)
+        aggregated_list.append(sorted_elements)
+    return aggregated_list
+    
 def replace_with_max(df, group_col, binary_col, replace_col):
     """
     Replace values in a DataFrame column where the value of a binary column is 2
@@ -870,14 +883,25 @@ def run_all_pca(dataset,split_count=3,min_completed=1, normalize_time=True, tune
         recomm_surv_2 = new_unl_df_names.sort_values(by=['predicted_completion'], ascending=[False]).groupby('username')['course_id'].apply(list)
         recomm_surv_2 = recomm_surv_2.to_list()
 
-        recomm_surv_3=[]
-        for i in range(len(recomm_surv_2)):
-            recomm_surv_3.append(rank_sum_sort(recomm_surv_1[i],recomm_surv_2[i]))
+        # recomm_surv_3=[]
+        # for i in range(len(recomm_surv_2)):
+        #     recomm_surv_3.append(rank_sum_sort(recomm_surv_1[i],recomm_surv_2[i]))
 
+        recomm_surv_0.2 = rank_sum_sort_w(recomm_surv_1,recomm_surv_2,W=0.2)
+        recomm_surv_0.4 = rank_sum_sort_w(recomm_surv_1,recomm_surv_2,W=0.4)
+        recomm_surv_0.5 = rank_sum_sort_w(recomm_surv_1,recomm_surv_2,W=0.5)
+        recomm_surv_0.6 = rank_sum_sort_w(recomm_surv_1,recomm_surv_2,W=0.6)
+        recomm_surv_0.8 = rank_sum_sort_w(recomm_surv_1,recomm_surv_2,W=0.8)
+
+        
         print("ndcg with Dropout: ",ndcg(recomm_surv_1,test_set,k=3))
         print("ndcg with Completion: ",ndcg(recomm_surv_2,test_set,k=3))
-        print("ndcg with both: ",ndcg(recomm_surv_3,test_set,k=3))
-
+        print("ndcg with both 0.2: ",ndcg(recomm_surv_0.2,test_set,k=3))
+        print("ndcg with both 0.4: ",ndcg(recomm_surv_0.4,test_set,k=3))
+        print("ndcg with both 0.5: ",ndcg(recomm_surv_0.5,test_set,k=3))        
+        print("ndcg with both 0.6: ",ndcg(recomm_surv_0.6,test_set,k=3))
+        print("ndcg with both 0.8: ",ndcg(recomm_surv_0.8,test_set,k=3))        
+        
         print("unlabeled for 0 ",len(new_unl_df_names.loc[new_unl_df_names['username']==0]))
 
             ######################################
